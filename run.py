@@ -16,7 +16,6 @@ import baseline as baseline_module
 from utils import (
     HV_REF,
     default_weight_pool_path,
-    energy_batch_fast,
     hypervolume_pygmo,
     merge_non_dominated_pool,
     normalize_energies,
@@ -49,6 +48,19 @@ _BASE_LARGE_CACHE: Dict[str, Dict[str, object]] = {}
 os.environ.setdefault("OMP_NUM_THREADS", "2")
 os.environ.setdefault("MKL_NUM_THREADS", "2")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+
+
+def _energy_batch_safe(
+    spins: np.ndarray,
+    edges: np.ndarray,
+    weights: np.ndarray,
+    h: np.ndarray,
+) -> np.ndarray:
+    s = np.asarray(spins, dtype=np.float64)
+    pair = s[:, edges[:, 0]] * s[:, edges[:, 1]]
+    edge_term = np.einsum("sm,km->sk", pair, weights, optimize=False)
+    linear_term = np.einsum("sn,kn->sk", s, h, optimize=False)
+    return np.asarray(edge_term + linear_term, dtype=np.float64)
 
 
 def _load_baseline_cache() -> None:
@@ -161,7 +173,7 @@ def _hv_from_spins(problem, spins: np.ndarray) -> float:
     n = spins.shape[0]
     for s in range(0, n, chunk):
         blk = spins[s : s + chunk]
-        energies = energy_batch_fast(blk, problem.edges, problem.weights, problem.h)
+        energies = _energy_batch_safe(blk, problem.edges, problem.weights, problem.h)
         objs = normalize_energies(energies, lower_bounds, upper_bounds)
         nd_pool = merge_non_dominated_pool(nd_pool, objs[_nd_idx_fast(objs)])
     return _hv_from_nd_objs(nd_pool, ref=HV_REF)

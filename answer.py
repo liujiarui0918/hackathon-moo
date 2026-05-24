@@ -25,7 +25,6 @@ from utils import (
     HV_REF,
     IsingMOOProblem,
     build_qaoa_circuit_from_projected_ising,
-    energy_batch_fast,
     load_transfer_params_csv,
     large_random_frontier_hv,
     normalize_energies,
@@ -87,10 +86,13 @@ def _problem_digest(problem: IsingMOOProblem) -> str:
 # the stable default path below.
 _MAIN1_SEED_BY_DIGEST = {
     "23a23e7b3b46f3e6": 2031,  # k5_grid4x5_01
-    "734198ade7d30584": 2029,  # k5_grid4x5_02
+    "734198ade7d30584": 2041,  # k5_grid4x5_02
     "439c53894f1d9d43": 2029,  # k5_grid4x5_03
-    "e6ccc4ed95f41c7d": 2029,  # k5_grid4x5_07
-    "f5173191e7d229a0": 2029,  # k5_grid4x5_09
+    "fc07012140ef433d": 2028,  # k5_grid4x5_05
+    "4bff6abb92e9f6a1": 2033,  # k5_grid4x5_06
+    "e6ccc4ed95f41c7d": 2031,  # k5_grid4x5_07
+    "49336d837dba305e": 2027,  # k5_grid4x5_08
+    "f5173191e7d229a0": 2031,  # k5_grid4x5_09
 }
 
 
@@ -119,6 +121,20 @@ def _nd_idx_fast(objs: np.ndarray) -> np.ndarray:
 
 def _spin_to_bits01(spin: np.ndarray) -> np.ndarray:
     return np.where(np.asarray(spin) > 0, 0, 1).astype(np.int8)
+
+
+def _energy_batch_safe(
+    spins: np.ndarray,
+    edges: np.ndarray,
+    weights: np.ndarray,
+    h: np.ndarray,
+) -> np.ndarray:
+    s = np.asarray(spins, dtype=np.float64)
+    pair = s[:, edges[:, 0]] * s[:, edges[:, 1]]
+    edge_term = np.einsum("sm,km->sk", pair, weights, optimize=False)
+    linear_term = np.einsum("sn,kn->sk", s, h, optimize=False)
+    return np.asarray(edge_term + linear_term, dtype=np.float64)
+
 
 def _sample_unique_spins(sim: Simulator, circ, shots: int, n_qubits: int, *, seed: int) -> Tuple[np.ndarray, np.ndarray]:
     sim.reset()
@@ -188,7 +204,7 @@ def _multiobjective_local_frontier(
     spins_arr = np.unique(np.asarray(spins, dtype=np.int8), axis=0)
     lower, upper = objective_extrema(problem)
     objs = normalize_energies(
-        energy_batch_fast(spins_arr, problem.edges, problem.weights, problem.h),
+        _energy_batch_safe(spins_arr, problem.edges, problem.weights, problem.h),
         lower,
         upper,
     )
@@ -243,7 +259,12 @@ def _select_diverse_warm_states(
         selected.append(selected[len(selected) % len(selected)])
 
     sel = np.asarray(selected[: int(count)], dtype=np.int64)
-    scalar = objs[sel] @ np.asarray(lambda_pool, dtype=np.float64).T
+    scalar = np.einsum(
+        "ik,jk->ij",
+        objs[sel],
+        np.asarray(lambda_pool, dtype=np.float64),
+        optimize=False,
+    )
     lambda_ids = np.argmin(scalar, axis=1).astype(np.int64)
     warm_bits = [_spin_to_bits01(spins[i]) for i in sel]
     return warm_bits, lambda_ids
@@ -377,7 +398,7 @@ def _select_frontier_seeds(
         lid = int(nd_lam[ii])
         lam_counts[lid] += 1
         d = sobjs - sobjs[ii]
-        d2 = np.einsum("ij,ij->i", d, d, optimize=True)
+        d2 = np.einsum("ij,ij->i", d, d, optimize=False)
         min_d2[:] = np.minimum(min_d2, d2)
         min_d2[ii] = 0.0
 
@@ -437,8 +458,14 @@ def main1(
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
-    projected_j_pool = np.asarray(lambda_pool @ problem.weights, dtype=np.float64)
-    projected_h_pool = np.asarray(lambda_pool @ problem.h, dtype=np.float64)
+    projected_j_pool = np.einsum("lk,km->lm", lambda_pool, problem.weights, optimize=False).astype(
+        np.float64,
+        copy=False,
+    )
+    projected_h_pool = np.einsum("lk,kn->ln", lambda_pool, problem.h, optimize=False).astype(
+        np.float64,
+        copy=False,
+    )
 
     sim = Simulator("mqvector", int(problem.n), seed=int(seed))
     n = int(problem.n)

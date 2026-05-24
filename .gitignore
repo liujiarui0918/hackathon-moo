@@ -6,6 +6,14 @@ results/*.json
 results/*.log
 results/*.err.log
 results/*.csv
+results/*.npz
+results/exact_frontiers/
+results/exact_guidance_samples/
+
+reports/*.aux
+reports/*.log
+reports/*.out
+reports/*.toc
 
 .env
 .venv/

@@ -339,9 +339,9 @@ def energy_batch_fast(
     u = edges[:, 0]
     v = edges[:, 1]
     pair = s[:, u] * s[:, v]  # [s, m]
-    edge_term = pair @ weights.T  # [s, k]
-    linear_term = s @ h.T  # [s, k]
-    return edge_term + linear_term
+    edge_term = np.einsum("sm,km->sk", pair, weights, optimize=False)
+    linear_term = np.einsum("sn,kn->sk", s, h, optimize=False)
+    return np.asarray(edge_term + linear_term, dtype=np.float64)
 
 def objective_bounds(weights: np.ndarray, h: np.ndarray) -> np.ndarray:
     # Conservative symmetric bound where |s_i|=1.
