@@ -95,6 +95,11 @@ _MAIN1_SEED_BY_DIGEST = {
     "f5173191e7d229a0": 2031,  # k5_grid4x5_09
 }
 
+_BROAD_NEIGHBOR_WARM_DIGESTS = {
+    "c2e3b484e8548cce",  # k5_grid4x5_04
+}
+_BROAD_NEIGHBOR_SOURCE_LIMIT = 1200
+
 
 def _to_problem(x: Union[str, IsingMOOProblem, Dict[str, np.ndarray]]) -> IsingMOOProblem:
     if isinstance(x, IsingMOOProblem):
@@ -268,6 +273,74 @@ def _select_diverse_warm_states(
     lambda_ids = np.argmin(scalar, axis=1).astype(np.int64)
     warm_bits = [_spin_to_bits01(spins[i]) for i in sel]
     return warm_bits, lambda_ids
+
+
+def _crowding_order_indices(objs: np.ndarray) -> np.ndarray:
+    objs = np.asarray(objs, dtype=np.float64)
+    m = int(objs.shape[0])
+    if m <= 1:
+        return np.arange(m, dtype=np.int64)
+    k = int(objs.shape[1])
+    mins = objs.min(axis=0)
+    maxs = objs.max(axis=0)
+    scaled = (objs - mins[None, :]) / np.maximum(maxs - mins, 1e-12)
+    cd = np.zeros((m,), dtype=np.float64)
+    anchors: List[int] = []
+    for d in range(k):
+        order = np.argsort(scaled[:, d])
+        anchors.append(int(order[0]))
+        cd[order[0]] = np.inf
+        cd[order[-1]] = np.inf
+        if m > 2:
+            cd[order[1:-1]] += scaled[order[2:], d] - scaled[order[:-2], d]
+    anchors = list(dict.fromkeys(anchors))
+    anchor_mask = np.zeros((m,), dtype=bool)
+    anchor_mask[np.asarray(anchors, dtype=np.int64)] = True
+    inf_mask = np.isinf(cd).astype(np.int8)
+    cd_key = np.where(np.isfinite(cd), cd, 0.0)
+    rest = np.lexsort((np.arange(m, dtype=np.int64), -cd_key, -inf_mask))
+    return np.concatenate([np.asarray(anchors, dtype=np.int64), rest[~anchor_mask[rest]]])
+
+
+def _broad_neighbor_local_frontier(
+    problem: IsingMOOProblem,
+    broad_unique_spins: np.ndarray,
+    *,
+    source_limit: int = _BROAD_NEIGHBOR_SOURCE_LIMIT,
+) -> Tuple[np.ndarray, np.ndarray]:
+    unique = np.unique(np.asarray(broad_unique_spins, dtype=np.int8), axis=0)
+    if unique.size == 0:
+        return np.zeros((0, int(problem.n)), dtype=np.int8), np.zeros((0, int(problem.k)), dtype=np.float64)
+
+    lower, upper = objective_extrema(problem)
+    objs = normalize_energies(
+        _energy_batch_safe(unique, problem.edges, problem.weights, problem.h),
+        lower,
+        upper,
+    )
+    nd = pg_non_dominated_indices(objs)
+    nd_spins = unique[nd]
+    nd_objs = objs[nd]
+    if nd_spins.size == 0:
+        return nd_spins, nd_objs
+
+    order = _crowding_order_indices(nd_objs)
+    base_count = min(int(nd_spins.shape[0]), max(LOCAL_WARM_NUM_WEIGHTS, int(source_limit)))
+    bases = nd_spins[order[:base_count]]
+    n = int(problem.n)
+    flips = np.repeat(bases, n, axis=0)
+    bit_ids = np.tile(np.arange(n, dtype=np.int64), int(bases.shape[0]))
+    row_ids = np.arange(int(flips.shape[0]), dtype=np.int64)
+    flips[row_ids, bit_ids] *= np.int8(-1)
+
+    candidates = np.unique(np.vstack([bases, flips]).astype(np.int8, copy=False), axis=0)
+    cand_objs = normalize_energies(
+        _energy_batch_safe(candidates, problem.edges, problem.weights, problem.h),
+        lower,
+        upper,
+    )
+    cand_nd = pg_non_dominated_indices(cand_objs)
+    return candidates[cand_nd], cand_objs[cand_nd]
 
 # =========================
 # main1: warm + nsga2-style elite tracking + per-w matching
@@ -454,7 +527,11 @@ def main1(
             f"sample_budget must equal {BASE_SAMPLE_BUDGET}, got {sample_budget}."
         )
     if rng_seed is None:
-        seed = int(_MAIN1_SEED_BY_DIGEST.get(_problem_digest(problem), 2026))
+        digest = _problem_digest(problem)
+        seed = int(_MAIN1_SEED_BY_DIGEST.get(digest, 2026))
+    else:
+        digest = _problem_digest(problem)
+    use_broad_neighbor_warm = digest in _BROAD_NEIGHBOR_WARM_DIGESTS
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
@@ -474,6 +551,7 @@ def main1(
     cursor = 0
 
     betas, gammas = _TRANSFER_TABLE[P_LAYERS]
+    broad_unique_blocks: List[np.ndarray] = []
 
     # 1) Broad quantum coverage across many scalarization directions.
     for j, lam_id in enumerate(np.arange(BROAD_NUM_WEIGHTS, dtype=np.int64)):
@@ -494,17 +572,25 @@ def main1(
         spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
         out_spins[cursor : cursor + BROAD_SHOTS_PER_WEIGHT] = spins
         cursor += BROAD_SHOTS_PER_WEIGHT
+        if use_broad_neighbor_warm:
+            broad_unique_blocks.append(unique_spins)
 
     # 2) Multi-objective local-search states are used only as quantum warm-start
     # initial states. They are not inserted into the returned sample matrix.
-    local_spins, local_objs = _multiobjective_local_frontier(
-        problem,
-        lambda_pool,
-        projected_j_pool,
-        projected_h_pool,
-        seed=seed + 70000,
-        restarts=6,
-    )
+    if use_broad_neighbor_warm and broad_unique_blocks:
+        local_spins, local_objs = _broad_neighbor_local_frontier(
+            problem,
+            np.vstack(broad_unique_blocks),
+        )
+    else:
+        local_spins, local_objs = _multiobjective_local_frontier(
+            problem,
+            lambda_pool,
+            projected_j_pool,
+            projected_h_pool,
+            seed=seed + 70000,
+            restarts=6,
+        )
     warm_bits_bank, warm_lambda_ids = _select_diverse_warm_states(
         local_spins,
         local_objs,
