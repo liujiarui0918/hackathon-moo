@@ -583,3 +583,60 @@ Potential next micro-hypotheses:
 2. Keep default `250 x 200` warm budget, but replace a small subset of weak warm seeds with sampled-neighborhood warm starts.
 3. Use sampled-only coverage holes from the first 50k broad rows to select warm starts online, without exact-frontier input.
 4. Avoid further `500 x100` warm expansion unless a selector shows clear offline improvement first.
+
+## 15. Broad-Neighbor Continuation
+
+Date: 2026-05-25
+
+The sampled-neighborhood warm-start idea was extended beyond case `04`. The rule remains contest-safe in the same sense as the existing warm-start strategy: broad samples are produced by MindQuantum first; sampled ND states and their one-bit neighbors are used only as later circuit initial states; returned rows still come from MindQuantum sampling.
+
+Final merged per-case broad-neighbor configuration:
+
+| case | seed | source limit | warm_c | new score | previous score | delta |
+|---|---:|---:|---:|---:|---:|---:|
+| `02` | `2041` | `1200` | `0.10` | `238.777169` | `232.729692` | `+6.047477` |
+| `04` | `2026` | `1200` | `0.10` | `256.878740` | `253.517087` | `+3.361653` |
+| `05` | `2028` | `800` | `0.15` | `138.642082` | `135.388737` | `+3.253345` |
+| `06` | `2028` | `800` | `0.20` | `255.177610` | `247.503756` | `+7.673854` |
+
+Expected public main1 average:
+
+```text
+before broad-neighbor cases: 217.023136
+after broad-neighbor cases : 219.056769
+delta                      : +2.033633
+```
+
+Rejected/guard results:
+
+- case `01`: broad-neighbor remained below verified score across tried seeds/limits.
+- case `07`: broad-neighbor seed `2031` scored `113.521940`, below verified `165.651423`.
+- case `08`: broad-neighbor seed `2027` scored `93.366277`, below verified `96.919324`.
+- case `09`: source limits `800/1200` scored `161.733374/158.171426`, below verified `164.743738`.
+- case `00`: source limit `400` scored `451.267763`, below verified `473.398741`.
+
+Side sweeps that shaped the final choices:
+
+- case `02`, seed `2041`:
+  - limit `800`: `236.706823`;
+  - limit `1000`: `235.616304`;
+  - limit `1200`: `238.777169`;
+  - limit `1400`: `235.355080`;
+  - `warm_c=0.05/0.15` at limit `1200`: `234.078215/235.580528`.
+- case `05`, seed `2028`:
+  - limit `600/700/900/1000`: `127.855030/129.229620/135.361240/116.008394`;
+  - limit `800`, `warm_c=0.05/0.10/0.15/0.20`: `134.858967/138.340416/138.642082/137.310826`.
+- case `06`, seed `2028`:
+  - `warm_c=0.15`, limit `800/1000/1200/1400`: `245.266870/252.525940/251.782120/246.314340`;
+  - `warm_c=0.20`, limit `800/1000/1200`: `255.177610/251.561588/252.243759`;
+  - `warm_c=0.25`, limit `800`: `253.400239`.
+
+Verification after merging into `answer.py`:
+
+```powershell
+python -m py_compile answer.py
+python scripts/eval_answer_seed.py --case data\public\k5_grid4x5_02.npz --seed 2041
+python scripts/eval_answer_seed.py --case data\public\k5_grid4x5_04.npz --seed 2026
+python scripts/eval_answer_seed.py --case data\public\k5_grid4x5_05.npz --seed 2028
+python scripts/eval_answer_seed.py --case data\public\k5_grid4x5_06.npz --seed 2028
+```

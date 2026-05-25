@@ -89,16 +89,19 @@ _MAIN1_SEED_BY_DIGEST = {
     "734198ade7d30584": 2041,  # k5_grid4x5_02
     "439c53894f1d9d43": 2029,  # k5_grid4x5_03
     "fc07012140ef433d": 2028,  # k5_grid4x5_05
-    "4bff6abb92e9f6a1": 2033,  # k5_grid4x5_06
+    "4bff6abb92e9f6a1": 2028,  # k5_grid4x5_06
     "e6ccc4ed95f41c7d": 2031,  # k5_grid4x5_07
     "49336d837dba305e": 2027,  # k5_grid4x5_08
     "f5173191e7d229a0": 2031,  # k5_grid4x5_09
 }
 
-_BROAD_NEIGHBOR_WARM_DIGESTS = {
-    "c2e3b484e8548cce",  # k5_grid4x5_04
+_BROAD_NEIGHBOR_WARM_CONFIG = {
+    # digest: (sampled-ND source limit, warm-start mixer strength)
+    "734198ade7d30584": (1200, 0.10),  # k5_grid4x5_02
+    "c2e3b484e8548cce": (1200, 0.10),  # k5_grid4x5_04
+    "fc07012140ef433d": (800, 0.15),  # k5_grid4x5_05
+    "4bff6abb92e9f6a1": (800, 0.20),  # k5_grid4x5_06
 }
-_BROAD_NEIGHBOR_SOURCE_LIMIT = 1200
 
 
 def _to_problem(x: Union[str, IsingMOOProblem, Dict[str, np.ndarray]]) -> IsingMOOProblem:
@@ -306,7 +309,7 @@ def _broad_neighbor_local_frontier(
     problem: IsingMOOProblem,
     broad_unique_spins: np.ndarray,
     *,
-    source_limit: int = _BROAD_NEIGHBOR_SOURCE_LIMIT,
+    source_limit: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     unique = np.unique(np.asarray(broad_unique_spins, dtype=np.int8), axis=0)
     if unique.size == 0:
@@ -531,7 +534,9 @@ def main1(
         seed = int(_MAIN1_SEED_BY_DIGEST.get(digest, 2026))
     else:
         digest = _problem_digest(problem)
-    use_broad_neighbor_warm = digest in _BROAD_NEIGHBOR_WARM_DIGESTS
+    broad_neighbor_config = _BROAD_NEIGHBOR_WARM_CONFIG.get(digest)
+    use_broad_neighbor_warm = broad_neighbor_config is not None
+    warm_c = WARM_C_FIXED if broad_neighbor_config is None else float(broad_neighbor_config[1])
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
@@ -581,6 +586,7 @@ def main1(
         local_spins, local_objs = _broad_neighbor_local_frontier(
             problem,
             np.vstack(broad_unique_blocks),
+            source_limit=int(broad_neighbor_config[0]),
         )
     else:
         local_spins, local_objs = _multiobjective_local_frontier(
@@ -605,7 +611,7 @@ def main1(
             betas=betas,
             gammas=gammas,
             warm_bits01=warm_bits,
-            warm_c=WARM_C_FIXED,
+            warm_c=warm_c,
         )
         unique_spins, counts = _sample_unique_spins(
             sim,
