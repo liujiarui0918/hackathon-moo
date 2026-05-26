@@ -89,7 +89,9 @@ Negative follow-ups that should not be repeated without a new hypothesis:
 | `04` | mixed limit `400`, `warm_c=0.10` | `248.817453` | below current broad-neighbor `256.878740` |
 | `04` | broad-neighbor limit `1200`, HV-proxy selector | `181.768634` | volume proxy is not competitive with crowding on this case |
 | `04` | broad-neighbor budget side `350x100+325x200` / `450x100+275x200` | best `258.882603` | below merged `400x100+300x200`; keep `400/300` |
+| `04` | offset broad window `[500,1000)` + mixed limit `400`, `warm_c=0.10` | `254.723616` | below merged `259.768537`; offset window alone is not enough |
 | `01` | local source, `warm_c=0.075/0.125/0.15/0.20` | best `95.796720` | below current `98.046167`; keep default local `warm_c=0.10` |
+| `05` | broad-neighbor limit `800`, `warm_c=0.15`, budget `400x100+300x200` | `138.608770` | slightly below current `138.642082`; keep `500x100+250x200` |
 | `00` | mixed limit `400`, warm-c side sweep `0.05/0.15/0.20` | best `477.964225` | below merged `warm_c=0.10` score `483.954121` |
 
 ## Hypotheses
@@ -208,6 +210,10 @@ Merged result:
 Runtime risk:
 
 - Case `09` circuit count roughly doubles while total returned rows stay fixed. The verified local elapsed time is about `202s`, so full-public timeout margin must be watched.
+
+Follow-up:
+
+- A runtime-only test of the alternative case `09` cohort `(2027,2031)` did not finish within a 15-minute local timeout and was killed. Do not merge or rerun that combination without first adding a faster harness or narrower circuit budget.
 
 ## Workstreams
 
