@@ -209,7 +209,24 @@ Merged result:
 
 Runtime risk:
 
-- Case `09` circuit count roughly doubles while total returned rows stay fixed. The verified local elapsed time is about `202s`, so full-public timeout margin must be watched.
+- Case `09` circuit count roughly doubles while total returned rows stay fixed. The targeted local elapsed time was about `202s`.
+- Full public verification after this merge completed in `2051.73s` with `timeout=False`, so the current public path has sufficient time margin in this environment.
+
+Full public verification:
+
+```powershell
+python run.py --split public --max-cases 0 --large-shots 1000 --out results\public_after_seedmix09_fullcheck.json
+```
+
+Result:
+
+```text
+score: 222.575303
+score_k5: 222.575303
+score_large_bonus: 0.000000
+elapsed(s): 2051.73
+timeout: False
+```
 
 Follow-up:
 
