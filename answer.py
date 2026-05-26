@@ -112,6 +112,10 @@ _MAIN1_BUDGET_CONFIG = {
     # digest: (broad weights, broad shots, warm weights, warm shots)
     "c2e3b484e8548cce": (400, 100, 300, 200),  # k5_grid4x5_04
 }
+_MAIN1_SEED_MIX_CONFIG = {
+    # digest: seeds whose per-circuit shots are split inside the same 100k budget
+    "f5173191e7d229a0": (2031, 2041),  # k5_grid4x5_09
+}
 
 
 def _to_problem(x: Union[str, IsingMOOProblem, Dict[str, np.ndarray]]) -> IsingMOOProblem:
@@ -667,6 +671,16 @@ def main1(
         != BASE_SAMPLE_BUDGET
     ):
         raise ValueError("Per-case shot allocation must equal BASE_SAMPLE_BUDGET.")
+    seed_mix = _MAIN1_SEED_MIX_CONFIG.get(digest)
+    if seed_mix is not None and (rng_seed is None or int(seed) == int(seed_mix[0])):
+        seed_cohorts = tuple(int(s) for s in seed_mix)
+    else:
+        seed_cohorts = (int(seed),)
+    cohort_count = int(len(seed_cohorts))
+    if broad_shots_per_weight % cohort_count != 0 or local_warm_shots_per_weight % cohort_count != 0:
+        raise ValueError("Seed-mix shot allocation must divide per-circuit shot counts.")
+    cohort_broad_shots = broad_shots_per_weight // cohort_count
+    cohort_warm_shots = local_warm_shots_per_weight // cohort_count
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
@@ -679,100 +693,102 @@ def main1(
         copy=False,
     )
 
-    sim = Simulator("mqvector", int(problem.n), seed=int(seed))
     n = int(problem.n)
 
     out_spins = np.empty((BASE_SAMPLE_BUDGET, n), dtype=np.int8)
     cursor = 0
 
     betas, gammas = _TRANSFER_TABLE[P_LAYERS]
-    broad_unique_blocks: List[np.ndarray] = []
 
-    # 1) Broad quantum coverage across many scalarization directions.
-    for j, lam_id in enumerate(np.arange(broad_num_weights, dtype=np.int64)):
-        circ = build_qaoa_circuit_from_projected_ising(
-            problem,
-            projected_j_pool[int(lam_id)],
-            projected_h_pool[int(lam_id)],
-            betas=betas,
-            gammas=gammas,
-        )
-        unique_spins, counts = _sample_unique_spins(
-            sim,
-            circ,
-            shots=broad_shots_per_weight,
-            n_qubits=n,
-            seed=seed + j,
-        )
-        spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
-        out_spins[cursor : cursor + broad_shots_per_weight] = spins
-        cursor += broad_shots_per_weight
-        if use_sampled_neighbor_warm:
-            broad_unique_blocks.append(unique_spins)
+    for cohort_seed in seed_cohorts:
+        sim = Simulator("mqvector", int(problem.n), seed=int(cohort_seed))
+        broad_unique_blocks: List[np.ndarray] = []
 
-    # 2) Multi-objective local-search states are used only as quantum warm-start
-    # initial states. They are not inserted into the returned sample matrix.
-    if broad_neighbor_config is not None and broad_unique_blocks:
-        local_spins, local_objs = _broad_neighbor_local_frontier(
-            problem,
-            np.vstack(broad_unique_blocks),
-            source_limit=int(broad_neighbor_config[0]),
-        )
-    elif mixed_config is not None and broad_unique_blocks:
-        pure_local_spins, _pure_local_objs = _multiobjective_ones_local_frontier(
-            problem,
+        # 1) Broad quantum coverage across many scalarization directions.
+        for j, lam_id in enumerate(np.arange(broad_num_weights, dtype=np.int64)):
+            circ = build_qaoa_circuit_from_projected_ising(
+                problem,
+                projected_j_pool[int(lam_id)],
+                projected_h_pool[int(lam_id)],
+                betas=betas,
+                gammas=gammas,
+            )
+            unique_spins, counts = _sample_unique_spins(
+                sim,
+                circ,
+                shots=cohort_broad_shots,
+                n_qubits=n,
+                seed=int(cohort_seed) + j,
+            )
+            spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
+            out_spins[cursor : cursor + cohort_broad_shots] = spins
+            cursor += cohort_broad_shots
+            if use_sampled_neighbor_warm:
+                broad_unique_blocks.append(unique_spins)
+
+        # 2) Multi-objective local-search states are used only as quantum warm-start
+        # initial states. They are not inserted into the returned sample matrix.
+        if broad_neighbor_config is not None and broad_unique_blocks:
+            local_spins, local_objs = _broad_neighbor_local_frontier(
+                problem,
+                np.vstack(broad_unique_blocks),
+                source_limit=int(broad_neighbor_config[0]),
+            )
+        elif mixed_config is not None and broad_unique_blocks:
+            pure_local_spins, _pure_local_objs = _multiobjective_ones_local_frontier(
+                problem,
+                lambda_pool,
+                projected_j_pool,
+                projected_h_pool,
+                seed=int(cohort_seed) + 70000,
+                restarts=6,
+            )
+            neighbor_spins, _neighbor_objs = _broad_neighbor_local_frontier(
+                problem,
+                np.vstack(broad_unique_blocks),
+                source_limit=int(mixed_config[0]),
+            )
+            local_spins, local_objs = _merge_local_and_neighbor_frontiers(
+                problem,
+                pure_local_spins,
+                neighbor_spins,
+            )
+        else:
+            local_spins, local_objs = _multiobjective_local_frontier(
+                problem,
+                lambda_pool,
+                projected_j_pool,
+                projected_h_pool,
+                seed=int(cohort_seed) + 70000,
+                restarts=6,
+            )
+        warm_bits_bank, warm_lambda_ids = _select_diverse_warm_states(
+            local_spins,
+            local_objs,
             lambda_pool,
-            projected_j_pool,
-            projected_h_pool,
-            seed=seed + 70000,
-            restarts=6,
+            count=local_warm_num_weights,
         )
-        neighbor_spins, _neighbor_objs = _broad_neighbor_local_frontier(
-            problem,
-            np.vstack(broad_unique_blocks),
-            source_limit=int(mixed_config[0]),
-        )
-        local_spins, local_objs = _merge_local_and_neighbor_frontiers(
-            problem,
-            pure_local_spins,
-            neighbor_spins,
-        )
-    else:
-        local_spins, local_objs = _multiobjective_local_frontier(
-            problem,
-            lambda_pool,
-            projected_j_pool,
-            projected_h_pool,
-            seed=seed + 70000,
-            restarts=6,
-        )
-    warm_bits_bank, warm_lambda_ids = _select_diverse_warm_states(
-        local_spins,
-        local_objs,
-        lambda_pool,
-        count=local_warm_num_weights,
-    )
-    warm_sim = Simulator("mqvector", n, seed=int(seed + 10000)) if mixed_config is not None else sim
-    for j, (warm_bits, lam_id) in enumerate(zip(warm_bits_bank, warm_lambda_ids)):
-        circ = build_qaoa_circuit_from_projected_ising(
-            problem,
-            projected_j_pool[int(lam_id)],
-            projected_h_pool[int(lam_id)],
-            betas=betas,
-            gammas=gammas,
-            warm_bits01=warm_bits,
-            warm_c=warm_c,
-        )
-        unique_spins, counts = _sample_unique_spins(
-            warm_sim,
-            circ,
-            shots=local_warm_shots_per_weight,
-            n_qubits=n,
-            seed=seed + 10000 + j,
-        )
-        spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
-        out_spins[cursor : cursor + local_warm_shots_per_weight] = spins
-        cursor += local_warm_shots_per_weight
+        warm_sim = Simulator("mqvector", n, seed=int(cohort_seed + 10000)) if mixed_config is not None else sim
+        for j, (warm_bits, lam_id) in enumerate(zip(warm_bits_bank, warm_lambda_ids)):
+            circ = build_qaoa_circuit_from_projected_ising(
+                problem,
+                projected_j_pool[int(lam_id)],
+                projected_h_pool[int(lam_id)],
+                betas=betas,
+                gammas=gammas,
+                warm_bits01=warm_bits,
+                warm_c=warm_c,
+            )
+            unique_spins, counts = _sample_unique_spins(
+                warm_sim,
+                circ,
+                shots=cohort_warm_shots,
+                n_qubits=n,
+                seed=int(cohort_seed) + 10000 + j,
+            )
+            spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
+            out_spins[cursor : cursor + cohort_warm_shots] = spins
+            cursor += cohort_warm_shots
 
     if cursor != BASE_SAMPLE_BUDGET:
         out_spins = out_spins[:cursor]

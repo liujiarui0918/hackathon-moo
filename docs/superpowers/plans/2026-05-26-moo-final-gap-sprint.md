@@ -62,15 +62,16 @@ Verified through `scripts/eval_answer_seed.py` on 2026-05-26:
 | `04` | `256.878740` | `259.768537` | `+2.889797` | broad-neighbor warm bank, neighbor limit `1200`, `warm_c=0.125`, budget `400x100 + 300x200` |
 | `07` | `165.651423` | `174.592019` | `+8.940596` | mixed local + sampled-neighbor warm bank, neighbor limit `800`, `warm_c=0.05` |
 | `08` | `96.919324` | `103.788974` | `+6.869650` | mixed local + sampled-neighbor warm bank, neighbor limit `400`, `warm_c=0.10` |
+| `09` | `164.743738` | `170.673648` | `+5.929910` | two-seed cohort mix `2031/2041`; same 500 broad + 250 warm circuits, half shots per seed, total rows still `100000` |
 
 Expected public main1 average after these three merges:
 
 ```text
 previous expected average: 219.056769
-case-score delta total:    29.255423
-average delta:             2.925542
-new expected average:      221.982311
-remaining to exact avg:    ~11.080073
+case-score delta total:    35.185333
+average delta:             3.518533
+new expected average:      222.575302
+remaining to exact avg:    ~10.487082
 ```
 
 Negative follow-ups that should not be repeated without a new hypothesis:
@@ -83,8 +84,11 @@ Negative follow-ups that should not be repeated without a new hypothesis:
 | `09` | two-hop source limit `50`, `warm_c=0.10` | `152.110585` | weak first signal; only continue with a stronger reason |
 | `09` | full lambda broad window `1000x50` + local warm `250x200` | `127.729502` | widening broad coverage alone destroys the current distribution |
 | `09` | mixed limit `400`, HV-proxy selector | `142.706247` | volume proxy over-selects wrong regions |
+| `07` | mixed limit `1000/1200`, `warm_c=0.05` | best `171.259940` | below merged limit `800` score `174.592019`; keep `800` |
+| `00` | mixed limit `200/600/800`, `warm_c=0.10` | best `470.291461` | below merged limit `400` score `483.954121`; keep `400` |
 | `04` | mixed limit `400`, `warm_c=0.10` | `248.817453` | below current broad-neighbor `256.878740` |
 | `04` | broad-neighbor limit `1200`, HV-proxy selector | `181.768634` | volume proxy is not competitive with crowding on this case |
+| `04` | broad-neighbor budget side `350x100+325x200` / `450x100+275x200` | best `258.882603` | below merged `400x100+300x200`; keep `400/300` |
 | `01` | local source, `warm_c=0.075/0.125/0.15/0.20` | best `95.796720` | below current `98.046167`; keep default local `warm_c=0.10` |
 | `00` | mixed limit `400`, warm-c side sweep `0.05/0.15/0.20` | best `477.964225` | below merged `warm_c=0.10` score `483.954121` |
 
@@ -188,6 +192,22 @@ First candidate command:
 ```powershell
 python scripts\run_lambda_offset_grid.py --case 04 --seed 2026 --candidate-source mixed --broad-start 500 --broad-weights 500 --broad-shots 100 --warm-count 250 --warm-shots 200 --neighbor-source-limit 400 --warm-c 0.1 --out results\lambda_offset_04_500_1000_mixed --run
 ```
+
+### H6: In-Budget Seed Cohorts
+
+Problem:
+
+- Full offline union of multiple `answer.main1` runs can reveal seed complementarity, but running full `100000` rows per seed and then subsampling is not the implementation target.
+
+Merged result:
+
+- Case `09` uses seeds `2031` and `2041` inside the same `100000` returned rows.
+- Each seed runs the same 500 broad and 250 warm circuits, but broad shots are split from `100` to `50` per seed and warm shots from `200` to `100` per seed.
+- Formal `scripts/eval_answer_seed.py --case data\public\k5_grid4x5_09.npz --seed 2031` score: `170.673648`.
+
+Runtime risk:
+
+- Case `09` circuit count roughly doubles while total returned rows stay fixed. The verified local elapsed time is about `202s`, so full-public timeout margin must be watched.
 
 ## Workstreams
 
