@@ -59,6 +59,7 @@ Verified through `scripts/eval_answer_seed.py` on 2026-05-26:
 | case | prior verified | new verified | delta | merged config |
 |---|---:|---:|---:|---|
 | `00` | `473.398741` | `483.954121` | `+10.555380` | mixed local + sampled-neighbor warm bank, neighbor limit `400`, `warm_c=0.10` |
+| `04` | `256.878740` | `259.170183` | `+2.291443` | broad-neighbor warm bank, neighbor limit `1200`, `warm_c=0.125` |
 | `07` | `165.651423` | `174.592019` | `+8.940596` | mixed local + sampled-neighbor warm bank, neighbor limit `800`, `warm_c=0.05` |
 | `08` | `96.919324` | `103.788974` | `+6.869650` | mixed local + sampled-neighbor warm bank, neighbor limit `400`, `warm_c=0.10` |
 
@@ -66,10 +67,10 @@ Expected public main1 average after these three merges:
 
 ```text
 previous expected average: 219.056769
-case-score delta total:    26.365626
-average delta:             2.636563
-new expected average:      221.693332
-remaining to exact avg:    ~11.369052
+case-score delta total:    28.657069
+average delta:             2.865707
+new expected average:      221.922476
+remaining to exact avg:    ~11.139908
 ```
 
 Negative follow-ups that should not be repeated without a new hypothesis:
@@ -81,7 +82,9 @@ Negative follow-ups that should not be repeated without a new hypothesis:
 | `09` | broad-neighbor limit `800/1200` on first 500 lambdas | best `161.733374` | below current `164.743738` |
 | `09` | two-hop source limit `50`, `warm_c=0.10` | `152.110585` | weak first signal; only continue with a stronger reason |
 | `09` | full lambda broad window `1000x50` + local warm `250x200` | `127.729502` | widening broad coverage alone destroys the current distribution |
+| `09` | mixed limit `400`, HV-proxy selector | `142.706247` | volume proxy over-selects wrong regions |
 | `04` | mixed limit `400`, `warm_c=0.10` | `248.817453` | below current broad-neighbor `256.878740` |
+| `04` | broad-neighbor limit `1200`, HV-proxy selector | `181.768634` | volume proxy is not competitive with crowding on this case |
 | `00` | mixed limit `400`, warm-c side sweep `0.05/0.15/0.20` | best `477.964225` | below merged `warm_c=0.10` score `483.954121` |
 
 ## Hypotheses

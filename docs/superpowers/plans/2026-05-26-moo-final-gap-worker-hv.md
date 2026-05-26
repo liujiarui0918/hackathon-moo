@@ -57,3 +57,14 @@ python scripts\run_hv_warm_grid.py --case 09 --seed 2031 --candidate-source mixe
 ```
 
 The dry run expands to a valid `100000`-row contest-budget config and does not start sampling.
+
+## Follow-Up Results
+
+Real sampling tests on 2026-05-26:
+
+| case | selector | source | neighbor limit | warm_c | score | current comparator | outcome |
+|---|---|---|---:|---:|---:|---:|---|
+| 09 | hv_proxy | mixed | 400 | 0.10 | 142.706247 | 164.743738 | reject |
+| 04 | hv_proxy | broad_neighbors | 1200 | 0.10 | 181.768634 | 256.878740 | reject |
+
+The current volume proxy is too aggressive and selects warm states in objective regions that do not translate into useful sampled fronts. Keep this script as an experiment harness, but do not port `hv_proxy` into `answer.py` without a new selector variant and a direct score win.

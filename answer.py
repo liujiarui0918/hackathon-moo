@@ -98,7 +98,7 @@ _MAIN1_SEED_BY_DIGEST = {
 _BROAD_NEIGHBOR_WARM_CONFIG = {
     # digest: (sampled-ND source limit, warm-start mixer strength)
     "734198ade7d30584": (1200, 0.10),  # k5_grid4x5_02
-    "c2e3b484e8548cce": (1200, 0.10),  # k5_grid4x5_04
+    "c2e3b484e8548cce": (1200, 0.125),  # k5_grid4x5_04
     "fc07012140ef433d": (800, 0.15),  # k5_grid4x5_05
     "4bff6abb92e9f6a1": (800, 0.20),  # k5_grid4x5_06
 }
