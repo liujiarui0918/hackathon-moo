@@ -219,8 +219,8 @@ def _config_error(cfg: GridConfig) -> str:
         errors.append("warm_c must be in [0, 1]")
     if int(cfg.local_restarts) < 1:
         errors.append("local_restarts must be >= 1")
-    if cfg.candidate_source not in ("local", "broad_neighbors"):
-        errors.append("candidate_source must be local or broad_neighbors")
+    if cfg.candidate_source not in ("local", "broad_neighbors", "mixed"):
+        errors.append("candidate_source must be local, broad_neighbors, or mixed")
     if int(cfg.neighbor_source_limit) < 1:
         errors.append("neighbor_source_limit must be >= 1")
     if int(cfg.broad_weights) < 0 or int(cfg.warm_count) < 0:
@@ -355,6 +355,36 @@ def _assign_lambdas(objs: np.ndarray, pool: np.ndarray) -> np.ndarray:
     return np.argmin(scalar, axis=1).astype(np.int64)
 
 
+def _empty_candidates(prepared: PreparedCase) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return (
+        np.zeros((0, int(prepared.problem.n)), dtype=np.int8),
+        np.zeros((0, int(prepared.problem.k)), dtype=np.float64),
+        np.zeros((0,), dtype=np.int64),
+    )
+
+
+def _merge_candidate_front(
+    ablate: Any,
+    prepared: PreparedCase,
+    spin_parts: Iterable[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    parts: list[np.ndarray] = []
+    for part in spin_parts:
+        arr = np.asarray(part, dtype=np.int8)
+        if arr.size:
+            parts.append(arr)
+    if not parts:
+        return _empty_candidates(prepared)
+
+    candidates = np.unique(np.vstack(parts).astype(np.int8, copy=False), axis=0)
+    cand_objs = _objectives_for_spins(ablate, prepared, candidates)
+    cand_nd = ablate.pg_non_dominated_indices(cand_objs)
+    cand_spins = candidates[cand_nd]
+    cand_objs = cand_objs[cand_nd]
+    cand_lams = _assign_lambdas(cand_objs, prepared.pool)
+    return cand_spins, cand_objs, cand_lams
+
+
 def _broad_neighbor_candidates(
     ablate: Any,
     prepared: PreparedCase,
@@ -365,12 +395,8 @@ def _broad_neighbor_candidates(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     unique = np.unique(np.asarray(broad_unique, dtype=np.int8), axis=0)
     if unique.size == 0:
-        return (
-            np.zeros((0, int(prepared.problem.n)), dtype=np.int8),
-            np.zeros((0, int(prepared.problem.k)), dtype=np.float64),
-            np.zeros((0,), dtype=np.int64),
-            0,
-        )
+        empty_spins, empty_objs, empty_lams = _empty_candidates(prepared)
+        return empty_spins, empty_objs, empty_lams, 0
 
     objs = _objectives_for_spins(ablate, prepared, unique)
     nd = ablate.pg_non_dominated_indices(objs)
@@ -449,6 +475,31 @@ def _run_config(ablate: Any, prepared: PreparedCase, cfg: GridConfig) -> tuple[f
                 source_limit=int(cfg.neighbor_source_limit),
             )
             local_candidate_count = int(np.asarray(cand_spins).shape[0])
+        elif cfg.candidate_source == "mixed":
+            if not broad_unique_parts:
+                raise ValueError("mixed candidate source requires broad sampling rows")
+            local_spins, _local_objs, _local_lams = ablate._multiobjective_local_candidates(
+                prepared.problem,
+                prepared.pool,
+                prepared.proj_j,
+                prepared.proj_h,
+                seed=int(cfg.seed + 70000),
+                restarts=int(cfg.local_restarts),
+            )
+            local_candidate_count = int(np.asarray(local_spins).shape[0])
+            broad_unique = np.unique(np.vstack(broad_unique_parts).astype(np.int8, copy=False), axis=0)
+            neighbor_spins, _neighbor_objs, _neighbor_lams, neighbor_candidate_count = _broad_neighbor_candidates(
+                ablate,
+                prepared,
+                broad_unique,
+                warm_count=int(cfg.warm_count),
+                source_limit=int(cfg.neighbor_source_limit),
+            )
+            cand_spins, cand_objs, cand_lams = _merge_candidate_front(
+                ablate,
+                prepared,
+                (local_spins, neighbor_spins),
+            )
         else:
             raise ValueError(f"unsupported candidate_source={cfg.candidate_source}")
         warm_spins, warm_lams = ablate._select_diverse_warm_states(
@@ -523,7 +574,7 @@ def main() -> None:
     parser.add_argument(
         "--candidate-source",
         action="append",
-        help="Warm candidate source(s): local or broad_neighbors. Comma-separated or repeatable.",
+        help="Warm candidate source(s): local, broad_neighbors, or mixed. Comma-separated or repeatable.",
     )
     parser.add_argument(
         "--neighbor-source-limit",

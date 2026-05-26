@@ -102,6 +102,12 @@ _BROAD_NEIGHBOR_WARM_CONFIG = {
     "fc07012140ef433d": (800, 0.15),  # k5_grid4x5_05
     "4bff6abb92e9f6a1": (800, 0.20),  # k5_grid4x5_06
 }
+_MIXED_WARM_CONFIG = {
+    # digest: (sampled-ND source limit, warm-start mixer strength)
+    "f1c49c0662b7b6fe": (400, 0.10),  # k5_grid4x5_00
+    "e6ccc4ed95f41c7d": (800, 0.05),  # k5_grid4x5_07
+    "49336d837dba305e": (400, 0.10),  # k5_grid4x5_08
+}
 
 
 def _to_problem(x: Union[str, IsingMOOProblem, Dict[str, np.ndarray]]) -> IsingMOOProblem:
@@ -189,6 +195,42 @@ def _scalar_local_descent_spin(
     return z
 
 
+def _scalar_local_descent_spin_from_ones(
+    problem: IsingMOOProblem,
+    j_raw: np.ndarray,
+    h_raw: np.ndarray,
+    *,
+    seed: int,
+) -> np.ndarray:
+    rng = np.random.default_rng(int(seed))
+    n = int(problem.n)
+    edges = np.asarray(problem.edges, dtype=np.int64)
+    u = edges[:, 0]
+    v = edges[:, 1]
+    j = np.asarray(j_raw, dtype=np.float64)
+    h = np.asarray(h_raw, dtype=np.float64)
+    z = np.ones((n,), dtype=np.int8)
+
+    for _ in range(32):
+        improved = False
+        for q in rng.permutation(n):
+            q = int(q)
+            field = float(h[q])
+            mask_u = u == q
+            if np.any(mask_u):
+                field += float(np.dot(j[mask_u], z[v[mask_u]]))
+            mask_v = v == q
+            if np.any(mask_v):
+                field += float(np.dot(j[mask_v], z[u[mask_v]]))
+            delta = -2.0 * float(z[q]) * field
+            if delta < -1e-12:
+                z[q] = np.int8(-z[q])
+                improved = True
+        if not improved:
+            break
+    return z
+
+
 def _multiobjective_local_frontier(
     problem: IsingMOOProblem,
     lambda_pool: np.ndarray,
@@ -203,6 +245,37 @@ def _multiobjective_local_frontier(
         for r in range(int(restarts)):
             spins.append(
                 _scalar_local_descent_spin(
+                    problem,
+                    projected_j_pool[lam_id],
+                    projected_h_pool[lam_id],
+                    seed=int(seed + lam_id * 1009 + r * 9176),
+                )
+            )
+    spins_arr = np.unique(np.asarray(spins, dtype=np.int8), axis=0)
+    lower, upper = objective_extrema(problem)
+    objs = normalize_energies(
+        _energy_batch_safe(spins_arr, problem.edges, problem.weights, problem.h),
+        lower,
+        upper,
+    )
+    keep = pg_non_dominated_indices(objs)
+    return spins_arr[keep], objs[keep]
+
+
+def _multiobjective_ones_local_frontier(
+    problem: IsingMOOProblem,
+    lambda_pool: np.ndarray,
+    projected_j_pool: np.ndarray,
+    projected_h_pool: np.ndarray,
+    *,
+    seed: int,
+    restarts: int = 6,
+) -> Tuple[np.ndarray, np.ndarray]:
+    spins: List[np.ndarray] = []
+    for lam_id in range(int(lambda_pool.shape[0])):
+        for r in range(int(restarts)):
+            spins.append(
+                _scalar_local_descent_spin_from_ones(
                     problem,
                     projected_j_pool[lam_id],
                     projected_h_pool[lam_id],
@@ -344,6 +417,30 @@ def _broad_neighbor_local_frontier(
     )
     cand_nd = pg_non_dominated_indices(cand_objs)
     return candidates[cand_nd], cand_objs[cand_nd]
+
+
+def _merge_local_and_neighbor_frontiers(
+    problem: IsingMOOProblem,
+    local_spins: np.ndarray,
+    neighbor_spins: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    parts: List[np.ndarray] = []
+    for spins in (local_spins, neighbor_spins):
+        arr = np.asarray(spins, dtype=np.int8)
+        if arr.size:
+            parts.append(arr)
+    if not parts:
+        return np.zeros((0, int(problem.n)), dtype=np.int8), np.zeros((0, int(problem.k)), dtype=np.float64)
+
+    candidates = np.unique(np.vstack(parts).astype(np.int8, copy=False), axis=0)
+    lower, upper = objective_extrema(problem)
+    objs = normalize_energies(
+        _energy_batch_safe(candidates, problem.edges, problem.weights, problem.h),
+        lower,
+        upper,
+    )
+    nd = pg_non_dominated_indices(objs)
+    return candidates[nd], objs[nd]
 
 # =========================
 # main1: warm + nsga2-style elite tracking + per-w matching
@@ -535,8 +632,14 @@ def main1(
     else:
         digest = _problem_digest(problem)
     broad_neighbor_config = _BROAD_NEIGHBOR_WARM_CONFIG.get(digest)
-    use_broad_neighbor_warm = broad_neighbor_config is not None
-    warm_c = WARM_C_FIXED if broad_neighbor_config is None else float(broad_neighbor_config[1])
+    mixed_config = _MIXED_WARM_CONFIG.get(digest)
+    use_sampled_neighbor_warm = broad_neighbor_config is not None or mixed_config is not None
+    if broad_neighbor_config is not None:
+        warm_c = float(broad_neighbor_config[1])
+    elif mixed_config is not None:
+        warm_c = float(mixed_config[1])
+    else:
+        warm_c = WARM_C_FIXED
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
@@ -577,16 +680,35 @@ def main1(
         spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
         out_spins[cursor : cursor + BROAD_SHOTS_PER_WEIGHT] = spins
         cursor += BROAD_SHOTS_PER_WEIGHT
-        if use_broad_neighbor_warm:
+        if use_sampled_neighbor_warm:
             broad_unique_blocks.append(unique_spins)
 
     # 2) Multi-objective local-search states are used only as quantum warm-start
     # initial states. They are not inserted into the returned sample matrix.
-    if use_broad_neighbor_warm and broad_unique_blocks:
+    if broad_neighbor_config is not None and broad_unique_blocks:
         local_spins, local_objs = _broad_neighbor_local_frontier(
             problem,
             np.vstack(broad_unique_blocks),
             source_limit=int(broad_neighbor_config[0]),
+        )
+    elif mixed_config is not None and broad_unique_blocks:
+        pure_local_spins, _pure_local_objs = _multiobjective_ones_local_frontier(
+            problem,
+            lambda_pool,
+            projected_j_pool,
+            projected_h_pool,
+            seed=seed + 70000,
+            restarts=6,
+        )
+        neighbor_spins, _neighbor_objs = _broad_neighbor_local_frontier(
+            problem,
+            np.vstack(broad_unique_blocks),
+            source_limit=int(mixed_config[0]),
+        )
+        local_spins, local_objs = _merge_local_and_neighbor_frontiers(
+            problem,
+            pure_local_spins,
+            neighbor_spins,
         )
     else:
         local_spins, local_objs = _multiobjective_local_frontier(
@@ -603,6 +725,7 @@ def main1(
         lambda_pool,
         count=LOCAL_WARM_NUM_WEIGHTS,
     )
+    warm_sim = Simulator("mqvector", n, seed=int(seed + 10000)) if mixed_config is not None else sim
     for j, (warm_bits, lam_id) in enumerate(zip(warm_bits_bank, warm_lambda_ids)):
         circ = build_qaoa_circuit_from_projected_ising(
             problem,
@@ -614,7 +737,7 @@ def main1(
             warm_c=warm_c,
         )
         unique_spins, counts = _sample_unique_spins(
-            sim,
+            warm_sim,
             circ,
             shots=LOCAL_WARM_SHOTS_PER_WEIGHT,
             n_qubits=n,
