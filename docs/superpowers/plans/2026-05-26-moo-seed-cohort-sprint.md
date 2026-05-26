@@ -194,6 +194,11 @@ Additional cohort/budget tests:
 | 09 | weighted cohort `2031:13+2041:7` | 171.250137 | 171.914006 | reject |
 | 09 | weighted cohort `2031:14+2041:11` | 171.939125 | 171.914006 | reject |
 | 09 | weighted cohort `2031:16+2041:9` | 171.590600 | 171.914006 | reject |
+| 09 | weighted cohort `2031:52+2041:48` | 170.070449 | 172.714670 | reject |
+| 09 | weighted cohort `2031:53+2041:47` | 169.942200 | 172.714670 | reject |
+| 09 | weighted cohort `2031:54+2041:46` | 172.486912 | 172.714670 | reject |
+| 09 | weighted cohort `2031:57+2041:43` | 171.924811 | 172.714670 | reject |
+| 09 | weighted cohort `2031:58+2041:42` | 171.707614 | 172.714670 | reject |
 
 Conclusion:
 

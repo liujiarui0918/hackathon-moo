@@ -307,6 +307,24 @@ Result:
 | `590x100 + 205x200` | 126.534882 | reject |
 | `600x100 + 200x200` | 138.623111 | reject |
 
+### Experiment 12: Case 09 Weight Fine Side
+
+```powershell
+& $py scripts\run_seed_cohort_grid.py --case 09 --mixes 2031:52+2041:48 2031:53+2041:47 2031:54+2041:46 2031:57+2041:43 2031:58+2041:42 --out results\seed_cohort_09_weight_fine_side --run
+```
+
+Result:
+
+| mix | score | decision |
+|---|---:|---|
+| `2031:52+2041:48` | 170.070449 | reject |
+| `2031:53+2041:47` | 169.942200 | reject |
+| `2031:54+2041:46` | 172.486912 | reject |
+| `2031:57+2041:43` | 171.924811 | reject |
+| `2031:58+2041:42` | 171.707614 | reject |
+
+Conclusion: keep `2031:11+2041:9` (`55/45`) for case `09`.
+
 ## Full Public Verification
 
 ```powershell
