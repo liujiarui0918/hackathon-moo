@@ -141,12 +141,59 @@ Additional cohort/budget tests:
 |---|---|---:|---:|---|
 | 07 | in-budget cohort `2031+2033` | 121.220306 | 174.592019 | reject |
 | 04 | in-budget cohort `2026+2028` | 251.487590 | 259.768537 | reject |
+| 04 | narrow budget `410x100 + 295x200` | 260.136560 | 259.768537 | superseded |
+| 04 | fine budget `414x100 + 293x200` | 260.930525 | 259.768537 | merge |
+| 04 | right budget `416x100 + 292x200` | 255.905231 | 260.930525 | reject |
+| 04 | right budget `418x100 + 291x200` | 256.652010 | 260.930525 | reject |
+| 04 | right budget `420x100 + 290x200` | 253.276220 | 260.930525 | reject |
+| 04 | right budget `422x100 + 289x200` | 259.452070 | 260.930525 | reject |
+| 04 | budget `414x100 + 293x200`, warm-c `0.1125` | 252.509012 | 260.930525 | reject |
+| 04 | budget `414x100 + 293x200`, warm-c `0.1375` | 245.361267 | 260.930525 | reject |
+| 00 | mixed seed side `2024` | 483.796882 | 483.954121 | reject |
+| 00 | mixed seed side `2028` | 457.216912 | 483.954121 | reject |
+| 00 | mixed seed side `2031` | 481.530488 | 483.954121 | reject |
 | 00 | mixed limit `400`, `warm_c=0.10`, budget `400x100+300x200` | 482.073793 | 483.954121 | reject |
+| 07 | mixed budget `450x100 + 275x200` | 176.725481 | 174.592019 | merge |
+| 07 | mixed budget `470x100 + 265x200` | 176.689509 | 174.592019 | reject |
+| 07 | mixed budget `490x100 + 255x200` | 116.402230 | 174.592019 | reject |
+| 07 | mixed budget `510x100 + 245x200` | 174.589428 | 174.592019 | reject |
+| 07 | mixed budget `530x100 + 235x200` | 118.545080 | 174.592019 | reject |
+| 07 | mixed budget `550x100 + 225x200` | 161.964882 | 174.592019 | reject |
+| 07 | finer budget `420x100 + 290x200` | 111.165193 | 176.725481 | reject |
+| 07 | finer budget `430x100 + 285x200` | 112.480203 | 176.725481 | reject |
+| 07 | finer budget `440x100 + 280x200` | 112.480203 | 176.725481 | reject |
+| 07 | finer budget `460x100 + 270x200` | 175.658939 | 176.725481 | reject |
+| 07 | finer budget `480x100 + 260x200` | 174.173827 | 176.725481 | reject |
+| 08 | mixed budget `450x100 + 275x200` | 100.273463 | 103.788974 | reject |
+| 08 | mixed budget `470x100 + 265x200` | 102.620177 | 103.788974 | reject |
+| 08 | mixed budget `530x100 + 235x200` | 96.606418 | 103.788974 | reject |
+| 08 | mixed budget `550x100 + 225x200` | 97.671153 | 103.788974 | reject |
+| 05 | broad-neighbor budget `450x100 + 275x200` | 132.076755 | 138.642082 | reject |
+| 05 | broad-neighbor budget `470x100 + 265x200` | 139.463996 | 138.642082 | reject |
+| 05 | broad-neighbor budget `530x100 + 235x200` | 138.601648 | 138.642082 | reject |
+| 05 | broad-neighbor budget `550x100 + 225x200` | 140.818609 | 138.642082 | merge |
+| 05 | right budget `560x100 + 220x200` | 140.116360 | 140.818609 | reject |
+| 05 | right budget `570x100 + 215x200` | 134.743161 | 140.818609 | reject |
+| 05 | right budget `580x100 + 210x200` | 137.526793 | 140.818609 | reject |
+| 05 | right budget `590x100 + 205x200` | 126.534882 | 140.818609 | reject |
+| 05 | right budget `600x100 + 200x200` | 138.623111 | 140.818609 | reject |
 | 06 | in-budget cohort `2028+2033` | 249.905959 | 255.177610 | reject |
+| 06 | warm-c fine `0.175` | 252.812732 | 255.177610 | reject |
+| 06 | warm-c fine `0.225` | 253.982764 | 255.177610 | reject |
+| 02 | in-budget cohort `2041+2026` | 229.247547 | 238.777169 | reject |
+| 02 | in-budget cohort `2041+2031` | 227.392065 | 238.777169 | reject |
+| 02 | warm-c fine `0.075` | 229.427119 | 238.777169 | reject |
+| 02 | warm-c fine `0.125` | 237.169689 | 238.777169 | reject |
 | 09 | in-budget cohort `2031+2041+2027+2025` | 168.117225 | 170.673648 | reject |
 | 09 | in-budget cohort `2031+2041+2025+2027+2030` | 137.937268 | 170.673648 | reject |
 | 09 | weighted cohort `2031:7+2041:3` | 170.597596 | 170.673648 | reject |
 | 09 | weighted cohort `2031:3+2041:2` | 171.914006 | 170.673648 | merge |
+| 09 | weighted cohort `2031:4+2041:1` | 170.184076 | 171.914006 | reject |
+| 09 | weighted cohort `2031:2+2041:3` | 170.099675 | 171.914006 | reject |
+| 09 | weighted cohort `2031:11+2041:9` | 172.714670 | 171.914006 | merge |
+| 09 | weighted cohort `2031:13+2041:7` | 171.250137 | 171.914006 | reject |
+| 09 | weighted cohort `2031:14+2041:11` | 171.939125 | 171.914006 | reject |
+| 09 | weighted cohort `2031:16+2041:9` | 171.590600 | 171.914006 | reject |
 
 Conclusion:
 
@@ -154,6 +201,18 @@ Conclusion:
 - The useful cohort signal is currently case-specific to `09`.
 - The best verified `09` split is weighted `2031:2041 = 60:40`, implemented as per-circuit shots `60/40` for broad circuits and `120/80` for warm circuits.
 - More seeds and over-biasing to `2031` both hurt.
+- `02/04/06/07` cohorts tested so far all lose score, so seed-cohort work should not be generalized without direct evidence.
+- Side checks around the old `09` split rejected both `80/20` and `40/60`; a finer denominator-20 scan found `2031:11+2041:9` as the best tested weighted cohort.
+
+2-core / 4GB runner note:
+
+| mode | case | score | elapsed | outcome |
+|---|---|---:|---:|---|
+| serial default | 08 | 103.788974 | 93.906s | keep |
+| `MOO_MAIN1_WORKERS=2`, process backend | 08 | 103.788974 | 229.531s | reject |
+| `MOO_MAIN1_WORKERS=2`, thread backend | 08 | 103.788974 | 95.409s | reject as default |
+
+Conclusion: keep main1 sampling serial by default on the 2-core/4GB target. Process parallelism is too slow; thread parallelism does not buy measurable time on the tested case.
 
 Formal merge verification:
 
@@ -165,8 +224,21 @@ python scripts\eval_answer_seed.py --case data\public\k5_grid4x5_04.npz --seed 2
 Results:
 
 ```text
-09 weighted 60/40: score=171.914006, rows=100000, elapsed=189.333s
-04 guard:          score=259.768537, rows=100000, elapsed=105.857s
+09 weighted 55/45: score=172.714670, rows=100000, elapsed=257.456s
+04 guard:          score=260.930525, rows=100000, elapsed=132.620s
+```
+
+Full-public verification after merging case `04/05/07/09` winners:
+
+```powershell
+python run.py --split public --max-cases 0 --large-shots 1000 --out results\public_after_budget_seed_sprint.json
+```
+
+```text
+score: 223.326602
+score_k5: 223.326602
+elapsed: 1506.65s
+timeout: False
 ```
 
 ## Merge Gate

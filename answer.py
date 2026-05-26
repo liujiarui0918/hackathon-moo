@@ -110,11 +110,13 @@ _MIXED_WARM_CONFIG = {
 }
 _MAIN1_BUDGET_CONFIG = {
     # digest: (broad weights, broad shots, warm weights, warm shots)
-    "c2e3b484e8548cce": (400, 100, 300, 200),  # k5_grid4x5_04
+    "c2e3b484e8548cce": (414, 100, 293, 200),  # k5_grid4x5_04
+    "fc07012140ef433d": (550, 100, 225, 200),  # k5_grid4x5_05
+    "e6ccc4ed95f41c7d": (450, 100, 275, 200),  # k5_grid4x5_07
 }
 _MAIN1_SEED_MIX_CONFIG = {
     # digest: seeds whose per-circuit shots are split inside the same 100k budget
-    "f5173191e7d229a0": ((2031, 3), (2041, 2)),  # k5_grid4x5_09
+    "f5173191e7d229a0": ((2031, 11), (2041, 9)),  # k5_grid4x5_09
 }
 
 
