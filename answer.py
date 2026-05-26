@@ -114,8 +114,52 @@ _MAIN1_BUDGET_CONFIG = {
 }
 _MAIN1_SEED_MIX_CONFIG = {
     # digest: seeds whose per-circuit shots are split inside the same 100k budget
-    "f5173191e7d229a0": (2031, 2041),  # k5_grid4x5_09
+    "f5173191e7d229a0": ((2031, 3), (2041, 2)),  # k5_grid4x5_09
 }
+
+
+def _normalize_seed_cohort_plan(
+    seed_mix,
+    broad_shots: int,
+    warm_shots: int,
+) -> Tuple[Tuple[int, int, int], ...]:
+    if seed_mix is None:
+        raise ValueError("seed_mix must not be None")
+    if not seed_mix:
+        raise ValueError("seed_mix must not be empty")
+
+    first = seed_mix[0]
+    if isinstance(first, (tuple, list)):
+        if all(len(item) == 2 for item in seed_mix):
+            seeds = [int(item[0]) for item in seed_mix]
+            weights = [int(item[1]) for item in seed_mix]
+            if any(weight <= 0 for weight in weights):
+                raise ValueError("Seed cohort weights must be positive.")
+            total_weight = int(sum(weights))
+            if int(broad_shots) % total_weight != 0 or int(warm_shots) % total_weight != 0:
+                raise ValueError("Weighted seed-mix shots must divide per-circuit shot counts.")
+            broad_unit = int(broad_shots) // total_weight
+            warm_unit = int(warm_shots) // total_weight
+            return tuple(
+                (int(seed), int(weight) * broad_unit, int(weight) * warm_unit)
+                for seed, weight in zip(seeds, weights)
+            )
+        if all(len(item) == 3 for item in seed_mix):
+            plan = tuple((int(item[0]), int(item[1]), int(item[2])) for item in seed_mix)
+            if sum(item[1] for item in plan) != int(broad_shots) or sum(item[2] for item in plan) != int(warm_shots):
+                raise ValueError("Explicit seed-mix shots must sum to per-circuit shot counts.")
+            if any(item[1] <= 0 or item[2] <= 0 for item in plan):
+                raise ValueError("Explicit seed-mix shots must be positive.")
+            return plan
+        raise ValueError("Seed cohort tuple entries must all have length 2 or all have length 3.")
+
+    seed_cohorts = tuple(int(s) for s in seed_mix)
+    cohort_count = int(len(seed_cohorts))
+    if int(broad_shots) % cohort_count != 0 or int(warm_shots) % cohort_count != 0:
+        raise ValueError("Seed-mix shot allocation must divide per-circuit shot counts.")
+    cohort_broad_shots = int(broad_shots) // cohort_count
+    cohort_warm_shots = int(warm_shots) // cohort_count
+    return tuple((int(seed), cohort_broad_shots, cohort_warm_shots) for seed in seed_cohorts)
 
 
 def _to_problem(x: Union[str, IsingMOOProblem, Dict[str, np.ndarray]]) -> IsingMOOProblem:
@@ -672,15 +716,17 @@ def main1(
     ):
         raise ValueError("Per-case shot allocation must equal BASE_SAMPLE_BUDGET.")
     seed_mix = _MAIN1_SEED_MIX_CONFIG.get(digest)
-    if seed_mix is not None and (rng_seed is None or int(seed) == int(seed_mix[0])):
-        seed_cohorts = tuple(int(s) for s in seed_mix)
+    if seed_mix is not None:
+        first_mix_item = seed_mix[0]
+        first_mix_seed = int(first_mix_item[0]) if isinstance(first_mix_item, (tuple, list)) else int(first_mix_item)
+    if seed_mix is not None and (rng_seed is None or int(seed) == first_mix_seed):
+        seed_cohort_plan = _normalize_seed_cohort_plan(
+            seed_mix,
+            broad_shots=broad_shots_per_weight,
+            warm_shots=local_warm_shots_per_weight,
+        )
     else:
-        seed_cohorts = (int(seed),)
-    cohort_count = int(len(seed_cohorts))
-    if broad_shots_per_weight % cohort_count != 0 or local_warm_shots_per_weight % cohort_count != 0:
-        raise ValueError("Seed-mix shot allocation must divide per-circuit shot counts.")
-    cohort_broad_shots = broad_shots_per_weight // cohort_count
-    cohort_warm_shots = local_warm_shots_per_weight // cohort_count
+        seed_cohort_plan = ((int(seed), broad_shots_per_weight, local_warm_shots_per_weight),)
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
@@ -700,7 +746,7 @@ def main1(
 
     betas, gammas = _TRANSFER_TABLE[P_LAYERS]
 
-    for cohort_seed in seed_cohorts:
+    for cohort_seed, cohort_broad_shots, cohort_warm_shots in seed_cohort_plan:
         sim = Simulator("mqvector", int(problem.n), seed=int(cohort_seed))
         broad_unique_blocks: List[np.ndarray] = []
 

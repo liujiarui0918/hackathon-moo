@@ -62,16 +62,16 @@ Verified through `scripts/eval_answer_seed.py` on 2026-05-26:
 | `04` | `256.878740` | `259.768537` | `+2.889797` | broad-neighbor warm bank, neighbor limit `1200`, `warm_c=0.125`, budget `400x100 + 300x200` |
 | `07` | `165.651423` | `174.592019` | `+8.940596` | mixed local + sampled-neighbor warm bank, neighbor limit `800`, `warm_c=0.05` |
 | `08` | `96.919324` | `103.788974` | `+6.869650` | mixed local + sampled-neighbor warm bank, neighbor limit `400`, `warm_c=0.10` |
-| `09` | `164.743738` | `170.673648` | `+5.929910` | two-seed cohort mix `2031/2041`; same 500 broad + 250 warm circuits, half shots per seed, total rows still `100000` |
+| `09` | `164.743738` | `171.914006` | `+7.170268` | weighted two-seed cohort mix `2031:2041 = 60:40`; same 500 broad + 250 warm circuits, total rows still `100000` |
 
 Expected public main1 average after these three merges:
 
 ```text
 previous expected average: 219.056769
-case-score delta total:    35.185333
-average delta:             3.518533
-new expected average:      222.575302
-remaining to exact avg:    ~10.487082
+case-score delta total:    36.425691
+average delta:             3.642569
+new expected average:      222.699338
+remaining to exact avg:    ~10.363046
 ```
 
 Negative follow-ups that should not be repeated without a new hypothesis:
@@ -204,15 +204,15 @@ Problem:
 Merged result:
 
 - Case `09` uses seeds `2031` and `2041` inside the same `100000` returned rows.
-- Each seed runs the same 500 broad and 250 warm circuits, but broad shots are split from `100` to `50` per seed and warm shots from `200` to `100` per seed.
-- Formal `scripts/eval_answer_seed.py --case data\public\k5_grid4x5_09.npz --seed 2031` score: `170.673648`.
+- Each seed runs the same 500 broad and 250 warm circuits. The best split is weighted `2031:2041 = 60:40`, so broad shots split `60/40` and warm shots split `120/80`.
+- Formal `scripts/eval_answer_seed.py --case data\public\k5_grid4x5_09.npz --seed 2031` score: `171.914006`.
 
 Runtime risk:
 
-- Case `09` circuit count roughly doubles while total returned rows stay fixed. The targeted local elapsed time was about `202s`.
-- Full public verification after this merge completed in `2051.73s` with `timeout=False`, so the current public path has sufficient time margin in this environment.
+- Case `09` circuit count roughly doubles while total returned rows stay fixed. The weighted targeted local elapsed time was about `189s`.
+- Previous equal-split public verification completed in `2051.73s` with `timeout=False`. The weighted `60/40` targeted run was faster than the equal-split targeted run, so timeout risk did not increase in the local evidence, but a weighted full-public rerun is still the final timing proof.
 
-Full public verification:
+Previous full public verification:
 
 ```powershell
 python run.py --split public --max-cases 0 --large-shots 1000 --out results\public_after_seedmix09_fullcheck.json

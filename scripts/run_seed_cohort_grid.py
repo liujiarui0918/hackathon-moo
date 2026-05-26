@@ -70,21 +70,37 @@ def _default_out() -> str:
     return f"results/seed_cohort_grid_{stamp}"
 
 
-def _parse_mix(raw: str) -> tuple[int, ...]:
+def _parse_mix(raw: str) -> tuple[Any, ...]:
     parts = [part.strip() for part in str(raw).replace(",", "+").split("+") if part.strip()]
     if len(parts) < 1:
         raise argparse.ArgumentTypeError("Each mix must contain at least one seed.")
     try:
-        seeds = tuple(int(part) for part in parts)
+        if any(":" in part for part in parts):
+            items: list[tuple[int, int]] = []
+            for part in parts:
+                seed_text, weight_text = part.split(":", 1)
+                items.append((int(seed_text), int(weight_text)))
+            if any(weight <= 0 for _, weight in items):
+                raise ValueError("weights must be positive")
+            seeds = tuple(items)
+        else:
+            seeds = tuple(int(part) for part in parts)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"Invalid seed mix: {raw}") from exc
-    if len(set(seeds)) != len(seeds):
+    seed_ids = tuple(int(item[0]) if isinstance(item, tuple) else int(item) for item in seeds)
+    if len(set(seed_ids)) != len(seed_ids):
         raise argparse.ArgumentTypeError("Seed mixes must not contain duplicates.")
     return seeds
 
 
-def _mix_id(seeds: tuple[int, ...]) -> str:
-    return "+".join(str(seed) for seed in seeds)
+def _mix_id(seeds: tuple[Any, ...]) -> str:
+    parts: list[str] = []
+    for seed in seeds:
+        if isinstance(seed, (tuple, list)):
+            parts.append(f"{int(seed[0])}x{int(seed[1])}")
+        else:
+            parts.append(str(int(seed)))
+    return "+".join(parts)
 
 
 def _row_key(row: dict[str, Any]) -> tuple[str, str] | None:
@@ -146,7 +162,12 @@ def _replace_or_append(rows: list[dict[str, Any]], row: dict[str, Any]) -> None:
     rows.append(row)
 
 
-def _evaluate(case: Path, mix: tuple[int, ...]) -> dict[str, Any]:
+def _first_seed(mix: tuple[Any, ...]) -> int:
+    first = mix[0]
+    return int(first[0]) if isinstance(first, (tuple, list)) else int(first)
+
+
+def _evaluate(case: Path, mix: tuple[Any, ...]) -> dict[str, Any]:
     import answer  # noqa: WPS433
     from run import _hv_from_spins, baseline_hv  # noqa: WPS433
     from utils import problem_from_npz  # noqa: WPS433
@@ -162,7 +183,7 @@ def _evaluate(case: Path, mix: tuple[int, ...]) -> dict[str, Any]:
         "mix_id": mix_id,
         "seeds": mix_id,
         "seed_count": int(len(mix)),
-        "first_seed": int(mix[0]),
+        "first_seed": _first_seed(mix),
         "hv": "",
         "base": "",
         "gain": "",
@@ -179,8 +200,8 @@ def _evaluate(case: Path, mix: tuple[int, ...]) -> dict[str, Any]:
     old_mix = answer._MAIN1_SEED_MIX_CONFIG.get(digest)
     try:
         base = float(baseline_hv(case, problem))
-        answer._MAIN1_SEED_MIX_CONFIG[digest] = tuple(int(seed) for seed in mix)
-        result = answer.main1(problem, rng_seed=int(mix[0]))
+        answer._MAIN1_SEED_MIX_CONFIG[digest] = tuple(mix)
+        result = answer.main1(problem, rng_seed=_first_seed(mix))
         if not isinstance(result, dict):
             raise TypeError("answer.main1() must return a dict.")
         if "sample_spins" not in result:
@@ -246,7 +267,7 @@ def main() -> None:
         nargs="+",
         type=_parse_mix,
         default=DEFAULT_MIXES,
-        help="Seed cohorts such as 2031+2041 or 2027+2031+2033+2041.",
+        help="Seed cohorts such as 2031+2041, 2027+2031+2033+2041, or weighted 2031:3+2041:2.",
     )
     parser.add_argument("--out", default=None, help="Output stem or .csv/.json path. Writes both CSV and JSON.")
     parser.add_argument("--rerun", action="store_true", help="Rerun successful existing case/mix rows.")
@@ -267,7 +288,7 @@ def main() -> None:
 
     case_suffix = _case_suffix(case)
     digest = _load_case_digest(case)
-    planned = [(case, tuple(int(seed) for seed in mix)) for mix in args.mixes]
+    planned = [(case, tuple(mix)) for mix in args.mixes]
     runnable = [
         (item_case, mix)
         for item_case, mix in planned
@@ -286,7 +307,7 @@ def main() -> None:
         print(f"planned_runs={len(planned)}")
         print(f"runs_to_execute={len(runnable)}")
         for _, mix in runnable:
-            print(f"mix={_mix_id(mix)},first_seed={int(mix[0])},monkeypatch_digest={digest}")
+            print(f"mix={_mix_id(mix)},first_seed={_first_seed(mix)},monkeypatch_digest={digest}")
         return
 
     rows = existing_rows

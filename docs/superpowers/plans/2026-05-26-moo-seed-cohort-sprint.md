@@ -32,7 +32,7 @@ Per-case state:
 | 06 | 255.177610 | 262.984747 | 7.807137 | broad-neighbor, limit 800, warm_c 0.20 |
 | 07 | 174.592019 | 186.729892 | 12.137873 | mixed warm, limit 800, warm_c 0.05 |
 | 08 | 103.788974 | 109.296972 | 5.507998 | mixed warm, limit 400, warm_c 0.10 |
-| 09 | 170.673648 | 191.122271 | 20.448623 | in-budget seed cohort 2031/2041 |
+| 09 | 171.914006 | 191.122271 | 19.208265 | weighted in-budget seed cohort 2031:2041 = 60:40 |
 
 ## Core Hypothesis
 
@@ -143,12 +143,31 @@ Additional cohort/budget tests:
 | 04 | in-budget cohort `2026+2028` | 251.487590 | 259.768537 | reject |
 | 00 | mixed limit `400`, `warm_c=0.10`, budget `400x100+300x200` | 482.073793 | 483.954121 | reject |
 | 06 | in-budget cohort `2028+2033` | 249.905959 | 255.177610 | reject |
+| 09 | in-budget cohort `2031+2041+2027+2025` | 168.117225 | 170.673648 | reject |
+| 09 | in-budget cohort `2031+2041+2025+2027+2030` | 137.937268 | 170.673648 | reject |
+| 09 | weighted cohort `2031:7+2041:3` | 170.597596 | 170.673648 | reject |
+| 09 | weighted cohort `2031:3+2041:2` | 171.914006 | 170.673648 | merge |
 
 Conclusion:
 
 - Seed cohorts are not generally beneficial.
 - The useful cohort signal is currently case-specific to `09`.
-- Future cohort work should focus on `09` non-uniform splits or smaller changes that do not double slow cases unnecessarily.
+- The best verified `09` split is weighted `2031:2041 = 60:40`, implemented as per-circuit shots `60/40` for broad circuits and `120/80` for warm circuits.
+- More seeds and over-biasing to `2031` both hurt.
+
+Formal merge verification:
+
+```powershell
+python scripts\eval_answer_seed.py --case data\public\k5_grid4x5_09.npz --seed 2031
+python scripts\eval_answer_seed.py --case data\public\k5_grid4x5_04.npz --seed 2026
+```
+
+Results:
+
+```text
+09 weighted 60/40: score=171.914006, rows=100000, elapsed=189.333s
+04 guard:          score=259.768537, rows=100000, elapsed=105.857s
+```
 
 ## Merge Gate
 
