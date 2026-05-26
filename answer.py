@@ -108,6 +108,10 @@ _MIXED_WARM_CONFIG = {
     "e6ccc4ed95f41c7d": (800, 0.05),  # k5_grid4x5_07
     "49336d837dba305e": (400, 0.10),  # k5_grid4x5_08
 }
+_MAIN1_BUDGET_CONFIG = {
+    # digest: (broad weights, broad shots, warm weights, warm shots)
+    "c2e3b484e8548cce": (400, 100, 300, 200),  # k5_grid4x5_04
+}
 
 
 def _to_problem(x: Union[str, IsingMOOProblem, Dict[str, np.ndarray]]) -> IsingMOOProblem:
@@ -640,6 +644,29 @@ def main1(
         warm_c = float(mixed_config[1])
     else:
         warm_c = WARM_C_FIXED
+    budget_config = _MAIN1_BUDGET_CONFIG.get(
+        digest,
+        (
+            BROAD_NUM_WEIGHTS,
+            BROAD_SHOTS_PER_WEIGHT,
+            LOCAL_WARM_NUM_WEIGHTS,
+            LOCAL_WARM_SHOTS_PER_WEIGHT,
+        ),
+    )
+    broad_num_weights, broad_shots_per_weight, local_warm_num_weights, local_warm_shots_per_weight = (
+        int(budget_config[0]),
+        int(budget_config[1]),
+        int(budget_config[2]),
+        int(budget_config[3]),
+    )
+    if broad_num_weights > LAMBDA_POOL_SIZE or local_warm_num_weights > LAMBDA_POOL_SIZE:
+        raise ValueError("Per-case shot allocation exceeds lambda pool size.")
+    if (
+        broad_num_weights * broad_shots_per_weight
+        + local_warm_num_weights * local_warm_shots_per_weight
+        != BASE_SAMPLE_BUDGET
+    ):
+        raise ValueError("Per-case shot allocation must equal BASE_SAMPLE_BUDGET.")
 
     # Fair comparison: load a pre-generated lambda pool (1000) shared by baseline/answer.
     lambda_pool = load_weight_pool(int(problem.k), n=LAMBDA_POOL_SIZE, seed=2026).astype(np.float64)
@@ -662,7 +689,7 @@ def main1(
     broad_unique_blocks: List[np.ndarray] = []
 
     # 1) Broad quantum coverage across many scalarization directions.
-    for j, lam_id in enumerate(np.arange(BROAD_NUM_WEIGHTS, dtype=np.int64)):
+    for j, lam_id in enumerate(np.arange(broad_num_weights, dtype=np.int64)):
         circ = build_qaoa_circuit_from_projected_ising(
             problem,
             projected_j_pool[int(lam_id)],
@@ -673,13 +700,13 @@ def main1(
         unique_spins, counts = _sample_unique_spins(
             sim,
             circ,
-            shots=BROAD_SHOTS_PER_WEIGHT,
+            shots=broad_shots_per_weight,
             n_qubits=n,
             seed=seed + j,
         )
         spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
-        out_spins[cursor : cursor + BROAD_SHOTS_PER_WEIGHT] = spins
-        cursor += BROAD_SHOTS_PER_WEIGHT
+        out_spins[cursor : cursor + broad_shots_per_weight] = spins
+        cursor += broad_shots_per_weight
         if use_sampled_neighbor_warm:
             broad_unique_blocks.append(unique_spins)
 
@@ -723,7 +750,7 @@ def main1(
         local_spins,
         local_objs,
         lambda_pool,
-        count=LOCAL_WARM_NUM_WEIGHTS,
+        count=local_warm_num_weights,
     )
     warm_sim = Simulator("mqvector", n, seed=int(seed + 10000)) if mixed_config is not None else sim
     for j, (warm_bits, lam_id) in enumerate(zip(warm_bits_bank, warm_lambda_ids)):
@@ -739,13 +766,13 @@ def main1(
         unique_spins, counts = _sample_unique_spins(
             warm_sim,
             circ,
-            shots=LOCAL_WARM_SHOTS_PER_WEIGHT,
+            shots=local_warm_shots_per_weight,
             n_qubits=n,
             seed=seed + 10000 + j,
         )
         spins = np.repeat(unique_spins, counts.astype(np.int32), axis=0)
-        out_spins[cursor : cursor + LOCAL_WARM_SHOTS_PER_WEIGHT] = spins
-        cursor += LOCAL_WARM_SHOTS_PER_WEIGHT
+        out_spins[cursor : cursor + local_warm_shots_per_weight] = spins
+        cursor += local_warm_shots_per_weight
 
     if cursor != BASE_SAMPLE_BUDGET:
         out_spins = out_spins[:cursor]

@@ -59,7 +59,7 @@ Verified through `scripts/eval_answer_seed.py` on 2026-05-26:
 | case | prior verified | new verified | delta | merged config |
 |---|---:|---:|---:|---|
 | `00` | `473.398741` | `483.954121` | `+10.555380` | mixed local + sampled-neighbor warm bank, neighbor limit `400`, `warm_c=0.10` |
-| `04` | `256.878740` | `259.170183` | `+2.291443` | broad-neighbor warm bank, neighbor limit `1200`, `warm_c=0.125` |
+| `04` | `256.878740` | `259.768537` | `+2.889797` | broad-neighbor warm bank, neighbor limit `1200`, `warm_c=0.125`, budget `400x100 + 300x200` |
 | `07` | `165.651423` | `174.592019` | `+8.940596` | mixed local + sampled-neighbor warm bank, neighbor limit `800`, `warm_c=0.05` |
 | `08` | `96.919324` | `103.788974` | `+6.869650` | mixed local + sampled-neighbor warm bank, neighbor limit `400`, `warm_c=0.10` |
 
@@ -67,10 +67,10 @@ Expected public main1 average after these three merges:
 
 ```text
 previous expected average: 219.056769
-case-score delta total:    28.657069
-average delta:             2.865707
-new expected average:      221.922476
-remaining to exact avg:    ~11.139908
+case-score delta total:    29.255423
+average delta:             2.925542
+new expected average:      221.982311
+remaining to exact avg:    ~11.080073
 ```
 
 Negative follow-ups that should not be repeated without a new hypothesis:
@@ -85,6 +85,7 @@ Negative follow-ups that should not be repeated without a new hypothesis:
 | `09` | mixed limit `400`, HV-proxy selector | `142.706247` | volume proxy over-selects wrong regions |
 | `04` | mixed limit `400`, `warm_c=0.10` | `248.817453` | below current broad-neighbor `256.878740` |
 | `04` | broad-neighbor limit `1200`, HV-proxy selector | `181.768634` | volume proxy is not competitive with crowding on this case |
+| `01` | local source, `warm_c=0.075/0.125/0.15/0.20` | best `95.796720` | below current `98.046167`; keep default local `warm_c=0.10` |
 | `00` | mixed limit `400`, warm-c side sweep `0.05/0.15/0.20` | best `477.964225` | below merged `warm_c=0.10` score `483.954121` |
 
 ## Hypotheses
@@ -168,6 +169,25 @@ Experiment:
 
 - Only run warm-c sweeps after H1/H2 finds a candidate source that is near current score.
 - Values: `0.05/0.10/0.15/0.20/0.25`.
+
+### H5: Offset Lambda Windows
+
+Problem:
+
+- Some exact-gap diagnostics point to lambda ids beyond the first 500 directions, but the naive full-window `1000x50` test on case `09` was much worse.
+- The more controlled question is whether a contiguous offset window such as `[500,1000)` can help a specific case without diluting shots across all `1000` lambdas.
+
+Tool:
+
+- Added `scripts/run_lambda_offset_grid.py`.
+- It is dry-run by default and requires `--run` for MindQuantum sampling.
+- It keeps the contest boundary: the broad and warm rows are generated through MindQuantum sampling, while classical candidates only choose warm-start states and lambda ids.
+
+First candidate command:
+
+```powershell
+python scripts\run_lambda_offset_grid.py --case 04 --seed 2026 --candidate-source mixed --broad-start 500 --broad-weights 500 --broad-shots 100 --warm-count 250 --warm-shots 200 --neighbor-source-limit 400 --warm-c 0.1 --out results\lambda_offset_04_500_1000_mixed --run
+```
 
 ## Workstreams
 
