@@ -102,6 +102,10 @@ _BROAD_NEIGHBOR_WARM_CONFIG = {
     "fc07012140ef433d": (800, 0.15),  # k5_grid4x5_05
     "4bff6abb92e9f6a1": (800, 0.20),  # k5_grid4x5_06
 }
+_TWOHOP_NEIGHBOR_WARM_CONFIG = {
+    # digest: (sampled-ND source limit, warm-start mixer strength)
+    "c2e3b484e8548cce": (120, 0.125),  # k5_grid4x5_04
+}
 _MIXED_WARM_CONFIG = {
     # digest: (sampled-ND source limit, warm-start mixer strength)
     "f1c49c0662b7b6fe": (400, 0.10),  # k5_grid4x5_00
@@ -433,6 +437,47 @@ def _crowding_order_indices(objs: np.ndarray) -> np.ndarray:
     return np.concatenate([np.asarray(anchors, dtype=np.int64), rest[~anchor_mask[rest]]])
 
 
+def _select_crowding_spins(spins: np.ndarray, objs: np.ndarray, *, count: int) -> np.ndarray:
+    spins = np.asarray(spins, dtype=np.int8)
+    objs = np.asarray(objs, dtype=np.float64)
+    if spins.size == 0:
+        return spins
+    m = int(objs.shape[0])
+    k = int(objs.shape[1])
+    mins = objs.min(axis=0)
+    maxs = objs.max(axis=0)
+    scaled = (objs - mins[None, :]) / np.maximum(maxs - mins, 1e-12)
+    cd = np.zeros((m,), dtype=np.float64)
+    anchors: List[int] = []
+    for d in range(k):
+        order = np.argsort(scaled[:, d])
+        anchors.append(int(order[0]))
+        cd[order[0]] = np.inf
+        cd[order[-1]] = np.inf
+        if m > 2:
+            cd[order[1:-1]] += scaled[order[2:], d] - scaled[order[:-2], d]
+
+    selected: List[int] = []
+    seen = set()
+    for idx in anchors:
+        if idx not in seen:
+            selected.append(idx)
+            seen.add(idx)
+    for idx in np.argsort(-cd):
+        value = int(idx)
+        if value in seen:
+            continue
+        selected.append(value)
+        seen.add(value)
+        if len(selected) >= int(count):
+            break
+    if not selected:
+        selected = [0]
+    while len(selected) < int(count):
+        selected.append(selected[len(selected) % len(selected)])
+    return spins[np.asarray(selected[: int(count)], dtype=np.int64)]
+
+
 def _broad_neighbor_local_frontier(
     problem: IsingMOOProblem,
     broad_unique_spins: np.ndarray,
@@ -465,6 +510,60 @@ def _broad_neighbor_local_frontier(
     flips[row_ids, bit_ids] *= np.int8(-1)
 
     candidates = np.unique(np.vstack([bases, flips]).astype(np.int8, copy=False), axis=0)
+    cand_objs = normalize_energies(
+        _energy_batch_safe(candidates, problem.edges, problem.weights, problem.h),
+        lower,
+        upper,
+    )
+    cand_nd = pg_non_dominated_indices(cand_objs)
+    return candidates[cand_nd], cand_objs[cand_nd]
+
+
+def _twohop_broad_neighbor_local_frontier(
+    problem: IsingMOOProblem,
+    broad_unique_spins: np.ndarray,
+    *,
+    source_limit: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    unique = np.unique(np.asarray(broad_unique_spins, dtype=np.int8), axis=0)
+    if unique.size == 0:
+        return np.zeros((0, int(problem.n)), dtype=np.int8), np.zeros((0, int(problem.k)), dtype=np.float64)
+
+    lower, upper = objective_extrema(problem)
+    objs = normalize_energies(
+        _energy_batch_safe(unique, problem.edges, problem.weights, problem.h),
+        lower,
+        upper,
+    )
+    nd = pg_non_dominated_indices(objs)
+    nd_spins = unique[nd]
+    nd_objs = objs[nd]
+    if nd_spins.size == 0:
+        return nd_spins, nd_objs
+
+    base_count = min(int(nd_spins.shape[0]), int(source_limit))
+    bases = _select_crowding_spins(nd_spins, nd_objs, count=base_count)
+    n = int(problem.n)
+    parts = [bases]
+
+    one_flips = np.repeat(bases, n, axis=0)
+    bit_ids = np.tile(np.arange(n, dtype=np.int64), int(bases.shape[0]))
+    row_ids = np.arange(int(one_flips.shape[0]), dtype=np.int64)
+    one_flips[row_ids, bit_ids] *= np.int8(-1)
+    parts.append(one_flips)
+
+    first, second = np.triu_indices(n, k=1)
+    if int(first.size) > 0:
+        pair_count = int(first.size)
+        two_flips = np.repeat(bases, pair_count, axis=0)
+        first_ids = np.tile(first.astype(np.int64, copy=False), int(bases.shape[0]))
+        second_ids = np.tile(second.astype(np.int64, copy=False), int(bases.shape[0]))
+        row_ids = np.arange(int(two_flips.shape[0]), dtype=np.int64)
+        two_flips[row_ids, first_ids] *= np.int8(-1)
+        two_flips[row_ids, second_ids] *= np.int8(-1)
+        parts.append(two_flips)
+
+    candidates = np.unique(np.vstack(parts).astype(np.int8, copy=False), axis=0)
     cand_objs = normalize_energies(
         _energy_batch_safe(candidates, problem.edges, problem.weights, problem.h),
         lower,
@@ -686,10 +785,17 @@ def main1(
         seed = int(_MAIN1_SEED_BY_DIGEST.get(digest, 2026))
     else:
         digest = _problem_digest(problem)
+    twohop_neighbor_config = _TWOHOP_NEIGHBOR_WARM_CONFIG.get(digest)
     broad_neighbor_config = _BROAD_NEIGHBOR_WARM_CONFIG.get(digest)
     mixed_config = _MIXED_WARM_CONFIG.get(digest)
-    use_sampled_neighbor_warm = broad_neighbor_config is not None or mixed_config is not None
-    if broad_neighbor_config is not None:
+    use_sampled_neighbor_warm = (
+        twohop_neighbor_config is not None
+        or broad_neighbor_config is not None
+        or mixed_config is not None
+    )
+    if twohop_neighbor_config is not None:
+        warm_c = float(twohop_neighbor_config[1])
+    elif broad_neighbor_config is not None:
         warm_c = float(broad_neighbor_config[1])
     elif mixed_config is not None:
         warm_c = float(mixed_config[1])
@@ -777,7 +883,13 @@ def main1(
 
         # 2) Multi-objective local-search states are used only as quantum warm-start
         # initial states. They are not inserted into the returned sample matrix.
-        if broad_neighbor_config is not None and broad_unique_blocks:
+        if twohop_neighbor_config is not None and broad_unique_blocks:
+            local_spins, local_objs = _twohop_broad_neighbor_local_frontier(
+                problem,
+                np.vstack(broad_unique_blocks),
+                source_limit=int(twohop_neighbor_config[0]),
+            )
+        elif broad_neighbor_config is not None and broad_unique_blocks:
             local_spins, local_objs = _broad_neighbor_local_frontier(
                 problem,
                 np.vstack(broad_unique_blocks),
