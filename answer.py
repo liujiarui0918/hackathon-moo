@@ -106,10 +106,11 @@ _MIXED_WARM_CONFIG = {
     # digest: (sampled-ND source limit, warm-start mixer strength)
     "f1c49c0662b7b6fe": (400, 0.10),  # k5_grid4x5_00
     "e6ccc4ed95f41c7d": (800, 0.05),  # k5_grid4x5_07
-    "49336d837dba305e": (400, 0.10),  # k5_grid4x5_08
+    "49336d837dba305e": (500, 0.10),  # k5_grid4x5_08
 }
 _MAIN1_BUDGET_CONFIG = {
     # digest: (broad weights, broad shots, warm weights, warm shots)
+    "f1c49c0662b7b6fe": (450, 100, 275, 200),  # k5_grid4x5_00
     "c2e3b484e8548cce": (414, 100, 293, 200),  # k5_grid4x5_04
     "fc07012140ef433d": (550, 100, 225, 200),  # k5_grid4x5_05
     "e6ccc4ed95f41c7d": (450, 100, 275, 200),  # k5_grid4x5_07
