@@ -117,7 +117,7 @@ _MAIN1_BUDGET_CONFIG = {
 }
 _MAIN1_SEED_MIX_CONFIG = {
     # digest: seeds whose per-circuit shots are split inside the same 100k budget
-    "f5173191e7d229a0": ((2031, 11), (2041, 9)),  # k5_grid4x5_09
+    "f5173191e7d229a0": ((2031, 10), (2041, 8), (2043, 2)),  # k5_grid4x5_09
 }
 
 

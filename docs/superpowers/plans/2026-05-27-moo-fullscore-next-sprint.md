@@ -339,6 +339,17 @@ Run only after the full-public process exits:
 
 Accept only if it beats `488.611575`.
 
+Result:
+
+| budget | score | decision |
+|---|---:|---|
+| 430x100 + 285x200 | 471.846573 | reject |
+| 440x100 + 280x200 | 486.352092 | reject |
+| 460x100 + 270x200 | 484.792529 | reject |
+| 480x100 + 260x200 | 457.180591 | reject |
+
+No case `00` budget micro-scan beat current `488.611575`.
+
 2. Case `08` source-limit micro-scan around the new winner:
 
 ```powershell
@@ -347,6 +358,16 @@ Accept only if it beats `488.611575`.
 
 Accept only if it beats `104.415093`.
 
+Result:
+
+| limit | score | decision |
+|---:|---:|---|
+| 450 | 101.301350 | reject |
+| 550 | 100.321448 | reject |
+| 600 | 98.275709 | reject |
+
+No case `08` source-limit micro-scan beat current `104.415093`.
+
 3. Case `09` non-budget axes that are not repeated ratio scans:
 
 ```powershell
@@ -354,5 +375,65 @@ Accept only if it beats `104.415093`.
 ```
 
 Accept only if it beats `172.714670`.
+
+Result:
+
+| mix | score | decision |
+|---|---:|---|
+| 2029:9 + 2031:11 | 156.775752 | reject |
+| 2031:11 + 2043:9 | 161.582144 | reject |
+| 2031:10 + 2041:8 + 2043:2 | 172.904216 | accept, targeted eval confirmed |
+
+Three-way weight micro-scan:
+
+| mix | score | decision |
+|---|---:|---|
+| 2031:10 + 2041:9 + 2043:1 | 169.953083 | reject |
+| 2031:10 + 2041:7 + 2043:3 | 170.324331 | reject |
+| 2031:11 + 2041:7 + 2043:2 | 172.602844 | reject |
+| 2031:9 + 2041:9 + 2043:2 | 172.822760 | reject |
+
+Accepted case `09` update:
+
+```python
+_MAIN1_SEED_MIX_CONFIG["f5173191e7d229a0"] = ((2031, 10), (2041, 8), (2043, 2))
+```
+
+Expected public-score lift over `223.854960`:
+
+```text
+(172.904216 - 172.714670) / 10 = +0.018955
+projected score: 223.873914
+```
+
+Full-public proof:
+
+```powershell
+& $py run.py --split public --max-cases 0 --large-shots 1000 --out results\public_after_case09_threeway_seedmix.json
+```
+
+Result:
+
+```text
+score: 223.873914
+score_k5: 223.873914
+elapsed: 1313.64s
+timeout: False
+```
+
+Per-case:
+
+| case | score | solve time |
+|---|---:|---:|
+| 00 | 488.611575 | 106.50s |
+| 01 | 98.046167 | 104.81s |
+| 02 | 238.777169 | 108.19s |
+| 03 | 302.332699 | 107.46s |
+| 04 | 260.930525 | 106.73s |
+| 05 | 140.818609 | 94.43s |
+| 06 | 255.177610 | 93.53s |
+| 07 | 176.725481 | 101.53s |
+| 08 | 104.415093 | 101.80s |
+| 09 | 172.904216 | 302.44s |
 
 4. Case `04` selector-axis experiments rather than already rejected budget/source-limit/warm-c axes. Candidate implementation should be isolated in a script first; do not patch `answer.py` until a targeted run beats `260.930525`.
