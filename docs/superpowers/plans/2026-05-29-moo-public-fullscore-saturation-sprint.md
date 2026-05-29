@@ -245,3 +245,36 @@ Rejected:
 | 01 | local budget symmetric `450/470/530/550` broad weights | 94.963971 | 98.046167 |
 
 Operational note: the case `09` tail experiment was manually stopped after the first completed row because it took `1542.62s` for a losing result and would create a serious full-public time risk.
+
+Main2 chunk benchmark:
+
+| case | shots | chunk | reported_s | frontier equal to first chunk |
+|---|---:|---:|---:|---|
+| large_00 | 20,000 | 512 | 1.681817 | yes |
+| large_00 | 20,000 | 1024 | 1.756934 | yes |
+| large_00 | 20,000 | 2048 | 2.211244 | yes |
+| large_00 | 20,000 | 4096 | 3.219275 | yes |
+| large_00 | 200,000 | 512 | 38.367801 | yes |
+| large_00 | 200,000 | 1024 | 28.323553 | yes |
+| large_00 | 200,000 | 2048 | 28.964315 | yes |
+| large_00 | 200,000 | 4096 | 34.649933 | yes |
+
+Decision: patch `answer.main2()` to cap the effective chunk size at `1024`. This does not change the random frontier for the tested case, reduces memory pressure versus `4096`, and may earn large-case speed bonus when the judge uses the default `200000` large shots.
+
+Full-public default-large proof:
+
+```powershell
+& $py run.py --split public --max-cases 0 --large-shots 200000 --out results\public_after_case07_budget452_main2_chunk1024_200k.json
+```
+
+Result:
+
+```text
+score: 224.792759
+score_k5: 223.909674
+score_large_bonus: 0.883085
+elapsed: 1531.50s
+timeout: False
+```
+
+All 10 large cases were valid: frontier matched baseline, HV diff stayed below tolerance, and speedup was positive on every large case.
