@@ -256,24 +256,26 @@ Main2 chunk benchmark:
 | large_00 | 20,000 | 4096 | 3.219275 | yes |
 | large_00 | 200,000 | 512 | 38.367801 | yes |
 | large_00 | 200,000 | 1024 | 28.323553 | yes |
+| large_00 | 200,000 | 1536 | 27.903115 | yes |
+| large_00 | 200,000 | 1792 | 26.770315 | yes |
 | large_00 | 200,000 | 2048 | 28.964315 | yes |
 | large_00 | 200,000 | 4096 | 34.649933 | yes |
 
-Decision: patch `answer.main2()` to cap the effective chunk size at `1024`. This does not change the random frontier for the tested case, reduces memory pressure versus `4096`, and may earn large-case speed bonus when the judge uses the default `200000` large shots.
+Decision: patch `answer.main2()` to cap the effective chunk size at `1792`. This does not change the random frontier for the tested case, reduces memory pressure versus `4096`, and may earn large-case speed bonus when the judge uses the default `200000` large shots.
 
 Full-public default-large proof:
 
 ```powershell
-& $py run.py --split public --max-cases 0 --large-shots 200000 --out results\public_after_case07_budget452_main2_chunk1024_200k.json
+& $py run.py --split public --max-cases 0 --large-shots 200000 --out results\public_after_main2_chunk1792_200k.json
 ```
 
 Result:
 
 ```text
-score: 224.792759
+score: 225.340213
 score_k5: 223.909674
-score_large_bonus: 0.883085
-elapsed: 1531.50s
+score_large_bonus: 1.430539
+elapsed: 1449.32s
 timeout: False
 ```
 

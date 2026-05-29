@@ -968,7 +968,7 @@ def main2(
 ) -> Dict[str, object]:
     problem = _to_problem(problem_input)
     seed = (_seed_from_problem(problem) + 701) if rng_seed is None else int(rng_seed)
-    effective_chunk = min(int(chunk_size), 1024)
+    effective_chunk = min(int(chunk_size), 1792)
     return large_random_frontier_hv(problem, shots=int(shots), chunk_size=effective_chunk, rng_seed=seed, ref=HV_REF)
 
 
