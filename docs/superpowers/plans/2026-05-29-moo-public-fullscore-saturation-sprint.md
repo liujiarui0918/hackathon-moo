@@ -280,3 +280,10 @@ timeout: False
 ```
 
 All 10 large cases were valid: frontier matched baseline, HV diff stayed below tolerance, and speedup was positive on every large case.
+
+Rejected main2 follow-up:
+
+| chunk cap | full-public score | large bonus | decision |
+|---:|---:|---:|---|
+| 1664 | 224.965846 | 1.056172 | reject; slower than 1792 overall |
+| 1792 | 225.340213 | 1.430539 | keep |
