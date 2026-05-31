@@ -420,3 +420,113 @@ Angle and seed follow-ups also lost:
 | 00 | true `answer.main1` gamma scale `0.95/1.05` | 478.630299 | 488.611575 | reject |
 
 Decision: do not patch `answer.py` from this sprint. The current case `04` crowding/two-hop selection is locally brittle but still dominates gap-guided, frontier-cap, seed-cohort, and angle-scale variants. The next credible search lane is either a new legal candidate-bank generator for case `00/04` that preserves current selection, or a very small case `09` single-tail run only if runtime can be bounded.
+
+## 2026-05-31 Main2 And Candidate-Bank Sprint
+
+### Objective
+
+Current best remains:
+
+```text
+public default-large score: 225.340213
+k5 score: 223.909674
+large bonus: 1.430539
+```
+
+The last sprint did not improve `main1`, so this round tests two non-overlapping lanes:
+
+1. `main2` micro-bonus: per-case chunk caps may improve the large score without touching `main1`.
+2. New legal candidate-bank generator: if a candidate-bank change can preserve the current crowding selector and only alter warm-start candidates, it remains production-compatible.
+
+### Constraints
+
+- `answer.main1()` and `answer.main2()` must return legal computed outputs; no exact-frontier rows or `results/` artifacts may be loaded.
+- `main2` changes must preserve exact frontier equality against baseline under `run.py`.
+- Do not continue case `04` gap/frontier/seed/gamma micros unless a new mechanism changes the candidate bank itself.
+- Case `09` experiments are one-row only unless a row clearly beats `172.904216` and stays within runtime limits.
+
+### Main2 Plan
+
+Observed full-public bottlenecks under chunk cap `1792`:
+
+| large case | candidate_s | speedup |
+|---|---:|---:|
+| 05 | 31.258674 | 0.083483 |
+| 09 | 29.799327 | 0.114589 |
+| 02 | 30.192721 | 0.136965 |
+| 08 | 29.608924 | 0.133036 |
+
+Experiments:
+
+```powershell
+& $py scripts\bench_main2_micro.py --case data\large\large_k5_grid40x50_05.npz --full --chunks 1024,1280,1536,1664,1792,2048 --out results\main2_case05_chunk_sweep.json
+& $py scripts\bench_main2_micro.py --case data\large\large_k5_grid40x50_09.npz --full --chunks 1024,1280,1536,1664,1792,2048 --out results\main2_case09_chunk_sweep.json
+```
+
+Accept only if:
+
+- frontier shape/allclose/HV diff match the reference chunk;
+- estimated score lift is positive enough to justify a full public run;
+- full public default-large beats `225.340213`.
+
+### Candidate-Bank Plan
+
+Candidate-bank experiments should preserve `_select_diverse_warm_states()` and only change legal warm-start candidates:
+
+- local neighborhood closure around current selected bases;
+- scalar local descent seeded from sampled ND/neighborhood states;
+- mixed bank variants for case `00` using the current budget and selector.
+
+Accept only if targeted score beats the current case score:
+
+| case | current target |
+|---|---:|
+| 00 | 488.611575 |
+| 04 | 261.279620 |
+
+### Delegation
+
+- Explorer A: `main2` chunk/digest safety and commands.
+- Explorer B: `00/04` legal candidate-bank generator proposal.
+- Explorer C: `09` single-tail risk review.
+
+Main critical path: run `main2` chunk sweeps for the slowest large cases while explorers inspect `main1` candidate-bank options.
+
+### Results
+
+Implemented:
+
+- `scripts/run_local_warm_grid.py` now supports `candidate_source=mixed_twohop`.
+  - This merges legal multi-objective local candidates with two-hop broad-neighbor candidates.
+  - The merged bank is still passed through the existing `_select_diverse_warm_states()` selector.
+  - Returned rows remain MindQuantum sampling outputs only.
+
+Main2 case `05` chunk sweep:
+
+```powershell
+& $py scripts\bench_main2_micro.py --case data\large\large_k5_grid40x50_05.npz --full --chunks 1024,1280,1536,1664,1792,2048 --out results\main2_case05_chunk_sweep.json
+```
+
+| chunk | reported_s | frontier allclose | decision |
+|---:|---:|---|---|
+| 1024 | 33.281816 | yes | reject |
+| 1280 | 31.213525 | yes | reject |
+| 1536 | 30.145158 | yes | diagnostic only; faster in this micro but needs full-public proof |
+| 1664 | 31.383412 | yes | reject |
+| 1792 | 30.793457 | yes | current production cap |
+| 2048 | 31.018868 | yes | reject |
+
+Decision: do not patch per-digest `main2` caps yet. Case `05` suggests `1536` may be faster locally, but previous full-public evidence showed `1664` losing despite some micro promise. Any per-digest cap must beat `225.340213` in a fresh full-public run before merge.
+
+Candidate-bank experiments:
+
+| case | experiment | best score | current target | decision |
+|---|---|---:|---:|---|
+| 00 | `mixed_twohop`, source limits `240/400`, `warm_c=0.1` | 482.238380 | 488.611575 | reject |
+| 04 | `mixed_twohop`, source limits `108/112/116/120`, `warm_c=0.125` | 261.086762 | 261.279620 | reject but near miss |
+| 04 | `mixed_twohop`, source limits `114/115/117/118`, `warm_c=0.125` | 261.086762 | 261.279620 | reject |
+| 04 | `mixed_twohop`, source limit `116`, `warm_c=0.12/0.1225/0.1275/0.13` | 258.332879 | 261.279620 | reject |
+
+Case `09`: skipped. Explorer review found no safe one-row command: the current `2031:10+2041:8+2043:2` mix is already best known, and the previous losing tail took `1542.62s`, creating full-public timeout risk.
+
+Decision: no `answer.py` change from this sprint. The best new legal candidate-bank signal was case `04` `mixed_twohop` at `261.086762`, which is close but still below the accepted `261.279620`.

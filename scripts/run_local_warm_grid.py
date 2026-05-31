@@ -219,8 +219,8 @@ def _config_error(cfg: GridConfig) -> str:
         errors.append("warm_c must be in [0, 1]")
     if int(cfg.local_restarts) < 1:
         errors.append("local_restarts must be >= 1")
-    if cfg.candidate_source not in ("local", "broad_neighbors", "mixed"):
-        errors.append("candidate_source must be local, broad_neighbors, or mixed")
+    if cfg.candidate_source not in ("local", "broad_neighbors", "mixed", "mixed_twohop"):
+        errors.append("candidate_source must be local, broad_neighbors, mixed, or mixed_twohop")
     if int(cfg.neighbor_source_limit) < 1:
         errors.append("neighbor_source_limit must be >= 1")
     if int(cfg.broad_weights) < 0 or int(cfg.warm_count) < 0:
@@ -430,6 +430,65 @@ def _broad_neighbor_candidates(
     return cand_spins, cand_objs, cand_lams, int(candidates.shape[0])
 
 
+def _twohop_broad_neighbor_candidates(
+    ablate: Any,
+    prepared: PreparedCase,
+    broad_unique: np.ndarray,
+    *,
+    source_limit: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    unique = np.unique(np.asarray(broad_unique, dtype=np.int8), axis=0)
+    if unique.size == 0:
+        empty_spins, empty_objs, empty_lams = _empty_candidates(prepared)
+        return empty_spins, empty_objs, empty_lams, 0
+
+    objs = _objectives_for_spins(ablate, prepared, unique)
+    nd = ablate.pg_non_dominated_indices(objs)
+    nd_spins = unique[nd]
+    nd_objs = objs[nd]
+    nd_lams = _assign_lambdas(nd_objs, prepared.pool)
+
+    base_count = min(int(nd_spins.shape[0]), int(source_limit))
+    if base_count <= 0:
+        empty_spins, empty_objs, empty_lams = _empty_candidates(prepared)
+        return empty_spins, empty_objs, empty_lams, 0
+
+    base_spins, _base_lams = ablate._select_diverse_warm_states(
+        nd_spins,
+        nd_objs,
+        nd_lams,
+        count=base_count,
+    )
+    bases = np.asarray(base_spins, dtype=np.int8)
+    n = int(prepared.problem.n)
+    parts = [bases]
+
+    flips = np.repeat(bases, n, axis=0)
+    bit_ids = np.tile(np.arange(n, dtype=np.int64), int(bases.shape[0]))
+    row_ids = np.arange(int(flips.shape[0]), dtype=np.int64)
+    flips[row_ids, bit_ids] *= np.int8(-1)
+    parts.append(flips)
+
+    first, second = np.triu_indices(n, k=1)
+    if int(first.size) > 0:
+        pair_count = int(first.size)
+        two_flips = np.repeat(bases, pair_count, axis=0)
+        first_ids = np.tile(first.astype(np.int64, copy=False), int(bases.shape[0]))
+        second_ids = np.tile(second.astype(np.int64, copy=False), int(bases.shape[0]))
+        row_ids = np.arange(int(two_flips.shape[0]), dtype=np.int64)
+        two_flips[row_ids, first_ids] *= np.int8(-1)
+        two_flips[row_ids, second_ids] *= np.int8(-1)
+        parts.append(two_flips)
+
+    candidates = np.unique(np.vstack(parts).astype(np.int8, copy=False), axis=0)
+    cand_objs = _objectives_for_spins(ablate, prepared, candidates)
+    cand_nd = ablate.pg_non_dominated_indices(cand_objs)
+    cand_spins = candidates[cand_nd]
+    cand_objs = cand_objs[cand_nd]
+    cand_lams = _assign_lambdas(cand_objs, prepared.pool)
+    return cand_spins, cand_objs, cand_lams, int(candidates.shape[0])
+
+
 def _run_config(ablate: Any, prepared: PreparedCase, cfg: GridConfig) -> tuple[float, float, float, float, int, int]:
     t0 = time.time()
     parts: list[np.ndarray] = []
@@ -475,9 +534,9 @@ def _run_config(ablate: Any, prepared: PreparedCase, cfg: GridConfig) -> tuple[f
                 source_limit=int(cfg.neighbor_source_limit),
             )
             local_candidate_count = int(np.asarray(cand_spins).shape[0])
-        elif cfg.candidate_source == "mixed":
+        elif cfg.candidate_source in ("mixed", "mixed_twohop"):
             if not broad_unique_parts:
-                raise ValueError("mixed candidate source requires broad sampling rows")
+                raise ValueError(f"{cfg.candidate_source} candidate source requires broad sampling rows")
             local_spins, _local_objs, _local_lams = ablate._multiobjective_local_candidates(
                 prepared.problem,
                 prepared.pool,
@@ -488,13 +547,21 @@ def _run_config(ablate: Any, prepared: PreparedCase, cfg: GridConfig) -> tuple[f
             )
             local_candidate_count = int(np.asarray(local_spins).shape[0])
             broad_unique = np.unique(np.vstack(broad_unique_parts).astype(np.int8, copy=False), axis=0)
-            neighbor_spins, _neighbor_objs, _neighbor_lams, neighbor_candidate_count = _broad_neighbor_candidates(
-                ablate,
-                prepared,
-                broad_unique,
-                warm_count=int(cfg.warm_count),
-                source_limit=int(cfg.neighbor_source_limit),
-            )
+            if cfg.candidate_source == "mixed_twohop":
+                neighbor_spins, _neighbor_objs, _neighbor_lams, neighbor_candidate_count = _twohop_broad_neighbor_candidates(
+                    ablate,
+                    prepared,
+                    broad_unique,
+                    source_limit=int(cfg.neighbor_source_limit),
+                )
+            else:
+                neighbor_spins, _neighbor_objs, _neighbor_lams, neighbor_candidate_count = _broad_neighbor_candidates(
+                    ablate,
+                    prepared,
+                    broad_unique,
+                    warm_count=int(cfg.warm_count),
+                    source_limit=int(cfg.neighbor_source_limit),
+                )
             cand_spins, cand_objs, cand_lams = _merge_candidate_front(
                 ablate,
                 prepared,
@@ -574,7 +641,7 @@ def main() -> None:
     parser.add_argument(
         "--candidate-source",
         action="append",
-        help="Warm candidate source(s): local, broad_neighbors, or mixed. Comma-separated or repeatable.",
+        help="Warm candidate source(s): local, broad_neighbors, mixed, or mixed_twohop. Comma-separated or repeatable.",
     )
     parser.add_argument(
         "--neighbor-source-limit",
