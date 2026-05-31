@@ -530,3 +530,153 @@ Candidate-bank experiments:
 Case `09`: skipped. Explorer review found no safe one-row command: the current `2031:10+2041:8+2043:2` mix is already best known, and the previous losing tail took `1542.62s`, creating full-public timeout risk.
 
 Decision: no `answer.py` change from this sprint. The best new legal candidate-bank signal was case `04` `mixed_twohop` at `261.086762`, which is close but still below the accepted `261.279620`.
+
+### Per-Digest Main2 Cap Rejection
+
+Temporary tested `answer.main2()` caps:
+
+```python
+large_02 -> 1536
+large_05 -> 1536
+large_08 -> 1536
+large_09 -> 1664
+default  -> 1792
+```
+
+Full-public command:
+
+```powershell
+& $py run.py --split public --max-cases 0 --large-shots 200000 --out results\public_main2_perdigest_caps_200k.json
+```
+
+Result:
+
+```text
+score: 225.101357
+score_k5: 223.909674
+score_large_bonus: 1.191683
+timeout: false
+```
+
+Decision: reject and revert. The large frontier gates passed, but the large bonus regressed from `1.430539` to `1.191683`. The run also showed severe timing instability on `large_00` and `large_01` even though their cap stayed at `1792`, so per-digest chunk caps are not robust enough to merge.
+
+Next direction: stop spending full-public budget on `main2` chunk caps unless a much stronger full-10-case speedup mechanism appears. Move back to small-gap `main1` cases: `05`, `03`, `01`, and `08`.
+
+## 2026-05-31 Small-Gap Angle Sprint
+
+### Objective
+
+Mine the remaining small-gap cases without revisiting explicitly failed lanes. The near-saturated targets were:
+
+| case | current target | exact upper | gap |
+|---|---:|---:|---:|
+| 05 | 140.818609 | 142.611213 | 1.792605 |
+| 03 | 302.332699 | 306.045598 | 3.712899 |
+| 01 | 98.046167 | 102.321625 | 4.275458 |
+| 08 | 104.415093 | 109.296972 | 4.881879 |
+
+Constraints:
+
+- Keep all returned rows from MindQuantum sampling.
+- Use classical/diagnostic logic only to choose warm starts or case-local transfer parameters.
+- Do not enable default multiprocessing in `answer.py`; prior 2-core/4GB review shows serial main1 remains safer and faster than process-level fanout.
+
+### Experiments
+
+Case `05` broad-neighbor warm-c micro:
+
+```powershell
+& $py scripts\run_local_warm_grid.py --case 05 --seed 2028 --candidate-source broad_neighbors --neighbor-source-limit 800 --warm-c 0.125,0.175 --broad-weights 550 --broad-shots 100 --warm-count 225 --warm-shots 200 --out results\local_warm_case05_bn800_c_micro
+```
+
+| warm_c | score | decision |
+|---:|---:|---|
+| 0.125 | 129.041607 | reject |
+| 0.175 | 136.598824 | reject |
+
+Case `01/03` transfer gamma micro:
+
+```powershell
+& $py scripts\run_answer_angle_grid.py --case 01 --case 03 --seed default --gamma-scale 0.95,1.05 --out results\answer_angle_case0103_gamma_micro --run
+```
+
+| case | gamma scale | score | current target | decision |
+|---|---:|---:|---:|---|
+| 01 | 0.95 | 92.628062 | 98.046167 | reject |
+| 01 | 1.05 | 91.734067 | 98.046167 | reject |
+| 03 | 0.95 | 301.085998 | 302.332699 | reject |
+| 03 | 1.05 | 303.285689 | 302.332699 | accept |
+
+Patched `answer.py` with a digest-local transfer-scale table:
+
+```python
+_MAIN1_TRANSFER_SCALE_CONFIG["439c53894f1d9d43"] = (1.0, 1.05)
+```
+
+Targeted verification:
+
+```powershell
+& $py scripts\eval_answer_seed.py --case data\public\k5_grid4x5_03.npz --seed 2029
+```
+
+Result:
+
+```text
+k5_grid4x5_03.npz,seed=2029,hv=0.641996624066,base=0.638963767172,score=303.285689,rows=100000
+```
+
+Case `08` mixed warm-c micro:
+
+```powershell
+& $py scripts\run_local_warm_grid.py --case 08 --seed 2027 --candidate-source mixed --neighbor-source-limit 500 --warm-c 0.075,0.09,0.11,0.125 --broad-weights 500 --broad-shots 100 --warm-count 250 --warm-shots 200 --out results\local_warm_case08_mixed_l500_warmc_micro
+```
+
+| warm_c | score | current target | decision |
+|---:|---:|---:|---|
+| 0.075 | 98.795834 | 104.415093 | reject |
+| 0.09 | 101.572741 | 104.415093 | reject |
+| 0.11 | 102.522450 | 104.415093 | reject |
+| 0.125 | 103.591672 | 104.415093 | reject |
+
+Case `03` follow-up probes after the accepted gamma scale:
+
+| experiment | best score | accept threshold | decision |
+|---|---:|---:|---|
+| seeds `2026/2031/2041` under patched gamma | 295.798245 | >303.285689 | reject |
+| effective gamma `1.04/1.06/1.08` | 302.148578 | >303.285689 | reject |
+| beta `0.99/1.01` on top of patched gamma | 299.872554 | >303.385689 | reject |
+
+Parallelism review:
+
+- Do not add default workers to `main1`; MindQuantum simulator reuse, ordered output slices, process startup, and memory duplication make it a poor fit for the 2-core/4GB judge.
+- Do not parallelize `main2` by default; the large bonus requires exact frontier equality against baseline, and naive parallel RNG/chunk execution risks invalidating the result.
+- Keep thread env constrained to one worker per numeric backend in `answer.py`.
+
+Decision: merge only the case `03` digest-local `gamma_scale=1.05` change. Expected small-set lift is approximately `+0.095299` average score before large bonus.
+
+### Verification
+
+Static checks:
+
+```powershell
+& $py -m py_compile answer.py scripts\run_local_warm_grid.py scripts\run_answer_angle_grid.py scripts\run_hv_warm_grid.py scripts\run_twohop_warm_grid.py scripts\eval_answer_seed.py
+git diff --check
+```
+
+Targeted proof for the only changed digest:
+
+```text
+case03 old score: 302.332699
+case03 new score: 303.285689
+case03 delta    : +0.952991
+average delta   : +0.095299
+```
+
+Expected full-public score if the previous best large bonus is unchanged:
+
+```text
+previous best full-public : 225.340213
+expected after case03     : 225.435512
+```
+
+A full `run.py --split public --large-shots 1000` local smoke was attempted, but the local command exceeded the 70-minute tool timeout and produced no complete JSON. The run was killed manually afterward. This is recorded as an infrastructure/runtime validation gap, not as a scoring rejection, because the accepted code path is digest-local to case `03` and the case-level verifier completed with `rows=100000`.

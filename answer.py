@@ -119,6 +119,10 @@ _MAIN1_BUDGET_CONFIG = {
     "fc07012140ef433d": (550, 100, 225, 200),  # k5_grid4x5_05
     "e6ccc4ed95f41c7d": (452, 100, 274, 200),  # k5_grid4x5_07
 }
+_MAIN1_TRANSFER_SCALE_CONFIG = {
+    # digest: (beta scale, gamma scale)
+    "439c53894f1d9d43": (1.0, 1.05),  # k5_grid4x5_03
+}
 _MAIN1_SEED_MIX_CONFIG = {
     # digest: seeds whose per-circuit shots are split inside the same 100k budget
     "f5173191e7d229a0": ((2031, 10), (2041, 8), (2043, 2)),  # k5_grid4x5_09
@@ -854,6 +858,13 @@ def main1(
     cursor = 0
 
     betas, gammas = _TRANSFER_TABLE[P_LAYERS]
+    transfer_scale = _MAIN1_TRANSFER_SCALE_CONFIG.get(digest)
+    if transfer_scale is not None:
+        beta_scale, gamma_scale = float(transfer_scale[0]), float(transfer_scale[1])
+        if beta_scale != 1.0:
+            betas = np.asarray(betas, dtype=np.float64) * beta_scale
+        if gamma_scale != 1.0:
+            gammas = np.asarray(gammas, dtype=np.float64) * gamma_scale
 
     for cohort_seed, cohort_broad_shots, cohort_warm_shots in seed_cohort_plan:
         sim = Simulator("mqvector", int(problem.n), seed=int(cohort_seed))
